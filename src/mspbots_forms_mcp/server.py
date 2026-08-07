@@ -13,8 +13,8 @@ from .config import Settings
 # Per-request credential isolation via contextvars.
 # GatewayTokenMiddleware sets this before the MCP handler runs.
 # Python asyncio copies context per task, so concurrent SSE connections are isolated.
-# Value is (access_token, host).
-_gateway_creds_var: contextvars.ContextVar[tuple[str, str] | None] = contextvars.ContextVar(
+# Value is (access_token, host, tenant_id).
+_gateway_creds_var: contextvars.ContextVar[tuple[str, str, str] | None] = contextvars.ContextVar(
     "forms_gateway_creds", default=None
 )
 
@@ -24,16 +24,24 @@ def get_client_from_context(settings: Settings) -> FormsAPIClient | None:
     creds = _gateway_creds_var.get()
     if not creds:
         return None
-    token, host = creds
-    return FormsAPIClient(token, host)
+    token, host, tenant_id = creds
+    return FormsAPIClient(token, host, tenant_id)
 
 
 class GatewayTokenMiddleware:
     """ASGI middleware.
 
-    Reads X-MSP-Token and X-MSP-Host (both required) from request headers
-    and stores them in the contextvar. Returns 401 if either is missing on
-    /mcp requests.
+    Reads X-MSP-Token, X-MSP-Host, and X-MSP-Tenant-Id (all required) from
+    request headers and stores them in the contextvar. Returns 401 if any
+    is missing on /mcp requests.
+
+    X-MSP-Tenant-Id exists because live testing (2026-08-07, against
+    agent.mspbots.ai) proved the APISIX app-routing gateway in front of the
+    Forms API 404s ("App not found") unless the request carries an
+    X_Tenant_ID *cookie* — the API contract's claim that tenant is derived
+    purely from the JWT is only true past that gateway layer. This mirrors
+    ticketqa-mcp's undocumented X-MSP-Tenant-Id header, except downstream
+    this one gets sent as a cookie, not a header (see api_client.py).
     """
 
     def __init__(self, app: ASGIApp, settings: Settings):
@@ -53,16 +61,19 @@ class GatewayTokenMiddleware:
         request = Request(scope)
         token = request.headers.get("x-msp-token")
         host = request.headers.get("x-msp-host")
-        if not token or not host:
+        tenant_id = request.headers.get("x-msp-tenant-id")
+        if not token or not host or not tenant_id:
             response = JSONResponse(
                 {
                     "error": "Missing credentials",
                     "message": (
                         "This server requires the X-MSP-Token header (Agent Platform "
-                        "bearer access credential) and the X-MSP-Host header "
-                        "(Forms/Survey API host)"
+                        "bearer access credential), the X-MSP-Host header (Forms/Survey "
+                        "API host), and the X-MSP-Tenant-Id header (tenant ID, forwarded "
+                        "downstream as the X_Tenant_ID cookie the app-routing gateway "
+                        "requires)"
                     ),
-                    "required_headers": ["X-MSP-Token", "X-MSP-Host"],
+                    "required_headers": ["X-MSP-Token", "X-MSP-Host", "X-MSP-Tenant-Id"],
                     "optional_headers": [],
                 },
                 status_code=401,
@@ -70,7 +81,7 @@ class GatewayTokenMiddleware:
             await response(scope, receive, send)
             return
 
-        ctx_token = _gateway_creds_var.set((token, host))
+        ctx_token = _gateway_creds_var.set((token, host, tenant_id))
         try:
             await self.app(scope, receive, send)
         finally:

@@ -2,13 +2,12 @@ from typing import Any
 
 import httpx
 
-# Per the API contract (PRD-15818 comment): private endpoints live at
-# "https://<host>/api/<resource>" and public endpoints at
-# "https://<host>/api/public/<resource>". No additional "/apps/<name>" prefix
-# is documented for this service (unlike ticketqa-mcp's App API routing) —
-# if that turns out to be wrong once tested against a real deployment, only
-# this constant needs to change.
-_API_PREFIX = "/api"
+# The API contract (PRD-15818 comment) documents paths as bare "/api/<resource>",
+# but live testing against agent.mspbots.ai showed the real gateway route is
+# "/apps/app-forms/api/<resource>" (confirmed 2026-08-07 with a real PROD
+# token) — same "/apps/<name>/api/..." convention as ticketqa-mcp, just not
+# mentioned in the contract doc.
+_API_PREFIX = "/apps/app-forms/api"
 
 
 class FormsAPIError(Exception):
@@ -22,15 +21,22 @@ class FormsAPIError(Exception):
 class FormsAPIClient:
     """Async httpx client wrapping the MSPbots Forms/Survey API.
 
-    Auth: a single platform JWT, forwarded verbatim as
-    "Authorization: Bearer <token>". Per the API contract, tenant isolation
-    is derived server-side from this token ("tenantId 从 token 取，永不从请求
-    参数取") — no separate tenant header is needed or sent, unlike
-    ticketqa-mcp's undocumented X_Tenant_ID requirement for a different App.
+    Auth: a platform JWT forwarded as "Authorization: Bearer <token>", PLUS
+    a tenant ID sent as the "X_Tenant_ID" cookie. The API contract claimed
+    tenant isolation is derived server-side from the JWT alone ("tenantId 从
+    token 取，永不从请求参数取"), but live testing against agent.mspbots.ai
+    (2026-08-07) proved that's only true once the request reaches the
+    business logic — the APISIX app-routing gateway in front of it 404s
+    ("App not found") without the X_Tenant_ID cookie, regardless of what's
+    in the token. Isolated via curl: same token, only difference is this
+    cookie, 404 -> 200. Same class of gap as ticketqa-mcp's undocumented
+    X_Tenant_ID requirement, except there it's an HTTP header and here it's
+    a cookie.
     """
 
-    def __init__(self, access_token: str, host: str):
+    def __init__(self, access_token: str, host: str, tenant_id: str):
         self._token = access_token
+        self._tenant_id = tenant_id
         self._base_url = host.rstrip("/") + _API_PREFIX
 
     def _headers(self) -> dict[str, str]:
@@ -39,6 +45,9 @@ class FormsAPIClient:
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
+
+    def _cookies(self) -> dict[str, str]:
+        return {"X_Tenant_ID": self._tenant_id}
 
     def _clean_params(self, params: dict | None) -> dict:
         if not params:
@@ -51,6 +60,7 @@ class FormsAPIClient:
                 resp = await client.get(
                     f"{self._base_url}{path}",
                     headers=self._headers(),
+                    cookies=self._cookies(),
                     params=self._clean_params(params),
                 )
             except httpx.RequestError as e:
@@ -63,6 +73,7 @@ class FormsAPIClient:
                 resp = await client.post(
                     f"{self._base_url}{path}",
                     headers=self._headers(),
+                    cookies=self._cookies(),
                     json=json_body,
                 )
             except httpx.RequestError as e:
@@ -75,6 +86,7 @@ class FormsAPIClient:
                 resp = await client.patch(
                     f"{self._base_url}{path}",
                     headers=self._headers(),
+                    cookies=self._cookies(),
                     json=json_body,
                 )
             except httpx.RequestError as e:
@@ -84,7 +96,9 @@ class FormsAPIClient:
     async def delete(self, path: str) -> Any:
         async with httpx.AsyncClient(timeout=60.0) as client:
             try:
-                resp = await client.delete(f"{self._base_url}{path}", headers=self._headers())
+                resp = await client.delete(
+                    f"{self._base_url}{path}", headers=self._headers(), cookies=self._cookies()
+                )
             except httpx.RequestError as e:
                 raise FormsAPIError(0, None, f"{e or type(e).__name__} (url={self._base_url}{path})") from e
             return self._handle(resp)
