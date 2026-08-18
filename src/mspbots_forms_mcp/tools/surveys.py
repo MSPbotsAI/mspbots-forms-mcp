@@ -8,8 +8,10 @@ called against a real deployment. See README Known Gaps.
 
 import json
 from collections.abc import Callable
+from typing import Annotated
 
 from mcp.server.fastmcp import FastMCP
+from pydantic import Field
 
 from ..api_client import FormsAPIClient, FormsAPIError
 from ._common import NO_TOKEN
@@ -18,20 +20,21 @@ from ._common import NO_TOKEN
 def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) -> None:
     @mcp.tool()
     async def survey_list(
-        status: str | None = None,
-        q: str | None = None,
-        cursor: str | None = None,
-        limit: int | None = None,
+        status: Annotated[
+            str | None, Field(description='Optional filter — "draft", "published", or "archived".')
+        ] = None,
+        q: Annotated[str | None, Field(description="Optional fuzzy title match.")] = None,
+        cursor: Annotated[
+            str | None,
+            Field(description="Optional pagination cursor from a previous response's nextCursor."),
+        ] = None,
+        limit: Annotated[
+            int | None, Field(description="Optional page size (default 20, max 100 — server clamps).")
+        ] = None,
     ) -> str:
         """List surveys (form summaries) for the current tenant.
 
         API: GET /api/surveys
-
-        Args:
-            status: Optional filter — "draft", "published", or "archived".
-            q: Optional fuzzy title match.
-            cursor: Optional pagination cursor from a previous response's nextCursor.
-            limit: Optional page size (default 20, max 100 — server clamps).
         """
         client = client_factory()
         if client is None:
@@ -44,20 +47,26 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             return f"Error: {e}"
 
     @mcp.tool()
-    async def survey_get(survey_id: str, include: list[str] | None = None) -> str:
+    async def survey_get(
+        survey_id: Annotated[str, Field(description="Required survey ID.")],
+        include: Annotated[
+            list[str] | None,
+            Field(
+                description=(
+                    'Optional list of extra sections to include: "definition" '
+                    '(full SurveyJS JSON), "questions" (compact question list — '
+                    "name/kind/title/required/showIf, much smaller than the full "
+                    'definition), "versions" (published version list).'
+                )
+            ),
+        ] = None,
+    ) -> str:
         """Get a survey's details.
 
         By default only the base record is returned — no definition,
         questions, or versions — since the full definition can be several KB.
 
         API: GET /api/surveys/:surveyId
-
-        Args:
-            survey_id: Required survey ID.
-            include: Optional list of extra sections to include: "definition"
-                (full SurveyJS JSON), "questions" (compact question list —
-                name/kind/title/required/showIf, much smaller than the full
-                definition), "versions" (published version list).
         """
         client = client_factory()
         if client is None:
@@ -71,10 +80,28 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
 
     @mcp.tool()
     async def survey_create(
-        title: str,
-        questions: list[dict] | None = None,
-        pages: list[dict] | None = None,
-        show_progress_bar: bool | None = None,
+        title: Annotated[str, Field(description="Required survey title.")],
+        questions: Annotated[
+            list[dict] | None,
+            Field(
+                description=(
+                    "Optional flat list of question dicts (see above). Use "
+                    "this OR pages, not both — pages takes precedence if both given."
+                )
+            ),
+        ] = None,
+        pages: Annotated[
+            list[dict] | None,
+            Field(
+                description=(
+                    'Optional list of {"title": str?, "questions": [...]} for a '
+                    "multi-page survey. Takes precedence over questions if both given."
+                )
+            ),
+        ] = None,
+        show_progress_bar: Annotated[
+            bool | None, Field(description="Optional, whether to show a progress bar.")
+        ] = None,
     ) -> str:
         """Create a new survey (draft, unpublished).
 
@@ -94,14 +121,6 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         with 422). Question names (q1, q2, ...) are auto-assigned in order.
 
         API: POST /api/surveys
-
-        Args:
-            title: Required survey title.
-            questions: Optional flat list of question dicts (see above). Use
-                this OR pages, not both — pages takes precedence if both given.
-            pages: Optional list of {"title": str?, "questions": [...]} for a
-                multi-page survey. Takes precedence over questions if both given.
-            show_progress_bar: Optional, whether to show a progress bar.
         """
         client = client_factory()
         if client is None:
@@ -121,15 +140,44 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
 
     @mcp.tool()
     async def survey_update(
-        survey_id: str,
-        title: str | None = None,
-        show_progress_bar: bool | None = None,
-        questions: list[dict] | None = None,
-        pages: list[dict] | None = None,
-        definition: dict | None = None,
+        survey_id: Annotated[str, Field(description="Required survey ID.")],
+        title: Annotated[str | None, Field(description="Optional new title.")] = None,
+        show_progress_bar: Annotated[
+            bool | None, Field(description="Optional new progress-bar setting.")
+        ] = None,
+        questions: Annotated[
+            list[dict] | None,
+            Field(
+                description="Optional flat question list (DSL) — replaces the current question set."
+            ),
+        ] = None,
+        pages: Annotated[
+            list[dict] | None,
+            Field(
+                description=(
+                    "Optional multi-page question list (DSL) — replaces the "
+                    "current question set. Takes precedence over questions if both given."
+                )
+            ),
+        ] = None,
+        definition: Annotated[
+            dict | None,
+            Field(
+                description=(
+                    "Optional raw SurveyJS JSON, for edits not expressible "
+                    "via the DSL. Mutually exclusive with questions/pages in "
+                    "practice — the API contract doesn't specify what happens if "
+                    "given together, so avoid combining them."
+                )
+            ),
+        ] = None,
     ) -> str:
         """Update a survey's draft. Only affects the working draft — published
         versions are immutable snapshots unaffected by this call.
+
+        Use this to edit a survey that already exists (e.g. one created via
+        survey_create); for spinning up a brand-new survey and getting it
+        live in one step, use survey_quick_publish instead.
 
         API: PATCH /api/surveys/:surveyId (idempotent)
 
@@ -139,19 +187,6 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         custom validators or choicesByUrl). If definition is given, it's a
         shallow merge — properties the DSL/Builder don't recognize are left
         untouched, never dropped.
-
-        Args:
-            survey_id: Required survey ID.
-            title: Optional new title.
-            show_progress_bar: Optional new progress-bar setting.
-            questions: Optional flat question list (DSL) — replaces the
-                current question set.
-            pages: Optional multi-page question list (DSL) — replaces the
-                current question set. Takes precedence over questions if both given.
-            definition: Optional raw SurveyJS JSON, for edits not expressible
-                via the DSL. Mutually exclusive with questions/pages in
-                practice — the API contract doesn't specify what happens if
-                given together, so avoid combining them.
         """
         client = client_factory()
         if client is None:
@@ -174,16 +209,15 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             return f"Error: {e}"
 
     @mcp.tool()
-    async def survey_publish(survey_id: str) -> str:
+    async def survey_publish(
+        survey_id: Annotated[str, Field(description="Required survey ID to publish.")],
+    ) -> str:
         """Publish a survey — creates an immutable version snapshot of its
         current draft. Share links bind to this version, so answers stay
         paired with the question set that was live when they were collected,
         even if the draft changes afterward.
 
         API: POST /api/surveys/:surveyId/versions
-
-        Args:
-            survey_id: Required survey ID to publish.
         """
         client = client_factory()
         if client is None:
@@ -195,18 +229,24 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             return f"Error: {e}"
 
     @mcp.tool()
-    async def survey_delete(survey_id: str, confirm: bool) -> str:
+    async def survey_delete(
+        survey_id: Annotated[str, Field(description="Required survey ID to delete.")],
+        confirm: Annotated[
+            bool,
+            Field(
+                description=(
+                    "Required — must be set to true to proceed. This tool "
+                    "refuses to call the API if confirm is not explicitly true."
+                )
+            ),
+        ],
+    ) -> str:
         """Delete a survey — permanently removes it along with all its
         published versions, share links, AND collected responses.
 
         ⚠️ DESTRUCTIVE. Requires confirm=true.
 
         API: DELETE /api/surveys/:surveyId
-
-        Args:
-            survey_id: Required survey ID to delete.
-            confirm: Required — must be set to true to proceed. This tool
-                refuses to call the API if confirm is not explicitly true.
         """
         if not confirm:
             return "Error: destructive operation requires confirm=true"
@@ -221,11 +261,29 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
 
     @mcp.tool()
     async def survey_quick_publish(
-        title: str,
-        questions: list[dict] | None = None,
-        pages: list[dict] | None = None,
-        show_progress_bar: bool | None = None,
-        audience: str = "public",
+        title: Annotated[str, Field(description="Required survey title.")],
+        questions: Annotated[
+            list[dict] | None,
+            Field(description="Optional flat question list (DSL) — see survey_create."),
+        ] = None,
+        pages: Annotated[
+            list[dict] | None,
+            Field(description="Optional multi-page question list (DSL) — see survey_create."),
+        ] = None,
+        show_progress_bar: Annotated[
+            bool | None, Field(description="Optional progress-bar setting.")
+        ] = None,
+        audience: Annotated[
+            str,
+            Field(
+                description=(
+                    'Share audience — "public", "workspace", "passcode", or '
+                    '"personal" (default "public"). For "passcode" or "personal", '
+                    "use share_create afterward instead to set the required "
+                    "passcode/recipient field — this tool doesn't accept those."
+                )
+            ),
+        ] = "public",
     ) -> str:
         """Convenience tool: create a survey, publish it, and create a share
         link, in one call. Composite tool implemented by chaining
@@ -234,15 +292,8 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         earlier steps are NOT rolled back (the survey/version may already
         exist even if share creation fails).
 
-        Args:
-            title: Required survey title.
-            questions: Optional flat question list (DSL) — see survey_create.
-            pages: Optional multi-page question list (DSL) — see survey_create.
-            show_progress_bar: Optional progress-bar setting.
-            audience: Share audience — "public", "workspace", "passcode", or
-                "personal" (default "public"). For "passcode" or "personal",
-                use share_create afterward instead to set the required
-                passcode/recipient field — this tool doesn't accept those.
+        Only for brand-new surveys — to edit questions/title on a survey
+        that already exists, use survey_update instead.
         """
         client = client_factory()
         if client is None:

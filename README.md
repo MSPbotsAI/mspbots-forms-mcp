@@ -16,7 +16,14 @@ This server was built from the API contract Leo Yang pasted into the PRD-15818 c
 
 ## Overview
 
-Implements the [Model Context Protocol](https://modelcontextprotocol.io/) (Streamable HTTP transport) and exposes the **14 tools** specified in the API contract:
+Implements the [Model Context Protocol](https://modelcontextprotocol.io/) (Streamable HTTP transport) and exposes the **14 tools** specified in the API contract, covering three areas — **building/editing surveys**, **managing how they're shared**, and **reading back what respondents submitted**. An agent should reach for this MCP for requests like:
+
+- "Build me a quick customer-satisfaction survey and get me a link to send out" → `survey_quick_publish`
+- "I need to tweak the wording on question 3 of the NPS survey" → `survey_update`
+- "How many people finished the NPS survey, what's the average score?" → `response_summary`
+- "Pause this share link for a bit, we're getting too many responses right now" → `share_update` with `action="pause"`
+- "Show me the actual open-text comments people left, not just the stats" → `response_list`
+- "This survey's done — delete it and everything tied to it" → `survey_delete`
 
 | Category | Tool | Annotations |
 |---|---|---|

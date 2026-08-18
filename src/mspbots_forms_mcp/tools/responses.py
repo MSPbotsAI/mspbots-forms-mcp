@@ -7,8 +7,10 @@ See README Known Gaps.
 
 import json
 from collections.abc import Callable
+from typing import Annotated
 
 from mcp.server.fastmcp import FastMCP
+from pydantic import Field
 
 from ..api_client import FormsAPIClient, FormsAPIError
 from ._common import NO_TOKEN
@@ -16,20 +18,22 @@ from ._common import NO_TOKEN
 
 def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) -> None:
     @mcp.tool()
-    async def response_summary(survey_id: str) -> str:
+    async def response_summary(
+        survey_id: Annotated[str, Field(description="Required survey ID.")],
+    ) -> str:
         """Get per-question aggregated statistics for a survey's responses.
 
         Call this FIRST for any analysis question — it's a compact summary,
-        not hundreds of raw response rows. Only counts completed responses
-        (partial ones would skew distributions). Open-text questions
+        not hundreds of raw response rows. Includes top-level totalStarted,
+        totalCompleted, completionRate, and averageDurationSeconds fields, in
+        addition to per-question stats — no separate call is needed for
+        completion rate. Only counts completed responses in per-question
+        stats (partial ones would skew distributions). Open-text questions
         ("textarea") only include up to 5 sample answers, not the full set.
         "checkbox" questions count each selected option separately, so
         option counts can sum to more than the response count.
 
         API: GET /api/surveys/:surveyId/responses/summary
-
-        Args:
-            survey_id: Required survey ID.
         """
         client = client_factory()
         if client is None:
@@ -42,11 +46,23 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
 
     @mcp.tool()
     async def response_list(
-        survey_id: str,
-        status: str | None = None,
-        share_id: str | None = None,
-        cursor: str | None = None,
-        limit: int | None = None,
+        survey_id: Annotated[str, Field(description="Required survey ID.")],
+        status: Annotated[
+            str | None, Field(description='Optional filter — "partial" or "completed".')
+        ] = None,
+        share_id: Annotated[
+            str | None,
+            Field(
+                description="Optional filter — only responses collected via this specific share link."
+            ),
+        ] = None,
+        cursor: Annotated[
+            str | None,
+            Field(description="Optional pagination cursor from a previous response's nextCursor."),
+        ] = None,
+        limit: Annotated[
+            int | None, Field(description="Optional page size (default 20, max 100).")
+        ] = None,
     ) -> str:
         """List individual survey responses, in a compact columnar format
         (columns + rows, not one repeated-key object per row) to save
@@ -59,14 +75,6 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         that produced each batch of rows, not necessarily the current draft.
 
         API: GET /api/surveys/:surveyId/responses
-
-        Args:
-            survey_id: Required survey ID.
-            status: Optional filter — "partial" or "completed".
-            share_id: Optional filter — only responses collected via this
-                specific share link.
-            cursor: Optional pagination cursor from a previous response's nextCursor.
-            limit: Optional page size, max 100.
         """
         client = client_factory()
         if client is None:
