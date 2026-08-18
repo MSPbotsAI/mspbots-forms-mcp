@@ -38,8 +38,6 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         ] = None,
     ) -> str:
         """List surveys (form summaries) for the current tenant.
-
-        API: GET /api/surveys
         """
         client = client_factory()
         if client is None:
@@ -72,8 +70,6 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
 
         By default only the base record is returned — no definition,
         questions, or versions — since the full definition can be several KB.
-
-        API: GET /api/surveys/:surveyId
         """
         client = client_factory()
         if client is None:
@@ -126,8 +122,6 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         "answered"/"empty", "value": ...} — showIf.question can only
         reference an earlier question (server rejects forward/circular refs
         with 422). Question names (q1, q2, ...) are auto-assigned in order.
-
-        API: POST /api/surveys
         """
         client = client_factory()
         if client is None:
@@ -186,8 +180,6 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         mspbots_forms_survey_create); for spinning up a brand-new survey and getting it
         live in one step, use mspbots_forms_survey_quick_publish instead.
 
-        API: PATCH /api/surveys/:surveyId (idempotent)
-
         Give either questions/pages (friendly DSL, full replace of the
         question set — same rules as mspbots_forms_survey_create) OR definition (raw
         SurveyJS JSON, for advanced edits the DSL can't express — e.g.
@@ -223,8 +215,6 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         current draft. Share links bind to this version, so answers stay
         paired with the question set that was live when they were collected,
         even if the draft changes afterward.
-
-        API: POST /api/surveys/:surveyId/versions
         """
         client = client_factory()
         if client is None:
@@ -252,8 +242,6 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         published versions, share links, AND collected responses.
 
         ⚠️ DESTRUCTIVE. Requires confirm=true.
-
-        API: DELETE /api/surveys/:surveyId
         """
         if not confirm:
             return error_envelope(

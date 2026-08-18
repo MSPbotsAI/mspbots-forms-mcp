@@ -25,8 +25,6 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         survey_id: Annotated[str, Field(description="Required survey ID.")],
     ) -> str:
         """List share links for a survey.
-
-        API: GET /api/surveys/:surveyId/shares
         """
         client = client_factory()
         if client is None:
@@ -42,8 +40,6 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         share_id: Annotated[str, Field(description="Required share ID.")],
     ) -> str:
         """Get a share link's details.
-
-        API: GET /api/shares/:shareId
         """
         client = client_factory()
         if client is None:
@@ -142,8 +138,6 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         """Create a share link for a survey. The survey must have been
         published at least once (mspbots_forms_survey_publish) — otherwise this returns
         409 conflict.
-
-        API: POST /api/surveys/:surveyId/shares
         """
         client = client_factory()
         if client is None:
@@ -258,8 +252,6 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         ] = None,
     ) -> str:
         """Update a share link's policy, or perform a lifecycle action.
-
-        API: PATCH /api/shares/:shareId (idempotent) for policy field
         changes, OR POST /api/shares/:shareId/token for action="rotate".
         """
         client = client_factory()
@@ -313,8 +305,6 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         still have analytical value even after the link is gone.
 
         ⚠️ DESTRUCTIVE. Requires confirm=true.
-
-        API: DELETE /api/shares/:shareId
         """
         if not confirm:
             return error_envelope(

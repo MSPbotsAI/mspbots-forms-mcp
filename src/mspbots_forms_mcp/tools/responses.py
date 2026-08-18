@@ -33,8 +33,6 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         averageDurationSeconds, plus per-question stats (completed
         responses only). "textarea" caps sample answers at 5; "checkbox"
         counts can exceed the response count (multi-select).
-
-        API: GET /api/surveys/:surveyId/responses/summary
         """
         client = client_factory()
         if client is None:
@@ -72,8 +70,6 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         Columns come from the survey's latest PUBLISHED version's
         definition, so headers track the version live when each batch of
         rows was collected, not necessarily the current draft.
-
-        API: GET /api/surveys/:surveyId/responses
         """
         client = client_factory()
         if client is None:
