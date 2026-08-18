@@ -19,7 +19,7 @@ from ._common import NO_TOKEN
 
 def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) -> None:
     @mcp.tool()
-    async def survey_list(
+    async def mspbots_forms_survey_list(
         status: Annotated[
             str | None, Field(description='Optional filter — "draft", "published", or "archived".')
         ] = None,
@@ -47,7 +47,7 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             return f"Error: {e}"
 
     @mcp.tool()
-    async def survey_get(
+    async def mspbots_forms_survey_get(
         survey_id: Annotated[str, Field(description="Required survey ID.")],
         include: Annotated[
             list[str] | None,
@@ -79,7 +79,7 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             return f"Error: {e}"
 
     @mcp.tool()
-    async def survey_create(
+    async def mspbots_forms_survey_create(
         title: Annotated[str, Field(description="Required survey title.")],
         questions: Annotated[
             list[dict] | None,
@@ -139,7 +139,7 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             return f"Error: {e}"
 
     @mcp.tool()
-    async def survey_update(
+    async def mspbots_forms_survey_update(
         survey_id: Annotated[str, Field(description="Required survey ID.")],
         title: Annotated[str | None, Field(description="Optional new title.")] = None,
         show_progress_bar: Annotated[
@@ -176,13 +176,13 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         versions are immutable snapshots unaffected by this call.
 
         Use this to edit a survey that already exists (e.g. one created via
-        survey_create); for spinning up a brand-new survey and getting it
-        live in one step, use survey_quick_publish instead.
+        mspbots_forms_survey_create); for spinning up a brand-new survey and getting it
+        live in one step, use mspbots_forms_survey_quick_publish instead.
 
         API: PATCH /api/surveys/:surveyId (idempotent)
 
         Give either questions/pages (friendly DSL, full replace of the
-        question set — same rules as survey_create) OR definition (raw
+        question set — same rules as mspbots_forms_survey_create) OR definition (raw
         SurveyJS JSON, for advanced edits the DSL can't express — e.g.
         custom validators or choicesByUrl). If definition is given, it's a
         shallow merge — properties the DSL/Builder don't recognize are left
@@ -209,7 +209,7 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             return f"Error: {e}"
 
     @mcp.tool()
-    async def survey_publish(
+    async def mspbots_forms_survey_publish(
         survey_id: Annotated[str, Field(description="Required survey ID to publish.")],
     ) -> str:
         """Publish a survey — creates an immutable version snapshot of its
@@ -229,7 +229,7 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             return f"Error: {e}"
 
     @mcp.tool()
-    async def survey_delete(
+    async def mspbots_forms_survey_delete(
         survey_id: Annotated[str, Field(description="Required survey ID to delete.")],
         confirm: Annotated[
             bool,
@@ -260,15 +260,15 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             return f"Error: {e}"
 
     @mcp.tool()
-    async def survey_quick_publish(
+    async def mspbots_forms_survey_quick_publish(
         title: Annotated[str, Field(description="Required survey title.")],
         questions: Annotated[
             list[dict] | None,
-            Field(description="Optional flat question list (DSL) — see survey_create."),
+            Field(description="Optional flat question list (DSL) — see mspbots_forms_survey_create."),
         ] = None,
         pages: Annotated[
             list[dict] | None,
-            Field(description="Optional multi-page question list (DSL) — see survey_create."),
+            Field(description="Optional multi-page question list (DSL) — see mspbots_forms_survey_create."),
         ] = None,
         show_progress_bar: Annotated[
             bool | None, Field(description="Optional progress-bar setting.")
@@ -279,7 +279,7 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
                 description=(
                     'Share audience — "public", "workspace", "passcode", or '
                     '"personal" (default "public"). For "passcode" or "personal", '
-                    "use share_create afterward instead to set the required "
+                    "use mspbots_forms_share_create afterward instead to set the required "
                     "passcode/recipient field — this tool doesn't accept those."
                 )
             ),
@@ -287,13 +287,13 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
     ) -> str:
         """Convenience tool: create a survey, publish it, and create a share
         link, in one call. Composite tool implemented by chaining
-        survey_create + survey_publish + a share-create call — there is no
+        mspbots_forms_survey_create + mspbots_forms_survey_publish + a share-create call — there is no
         single backing REST endpoint for this; if any step fails partway,
         earlier steps are NOT rolled back (the survey/version may already
         exist even if share creation fails).
 
         Only for brand-new surveys — to edit questions/title on a survey
-        that already exists, use survey_update instead.
+        that already exists, use mspbots_forms_survey_update instead.
         """
         client = client_factory()
         if client is None:

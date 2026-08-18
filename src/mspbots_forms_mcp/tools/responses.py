@@ -18,7 +18,7 @@ from ._common import NO_TOKEN
 
 def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) -> None:
     @mcp.tool()
-    async def response_summary(
+    async def mspbots_forms_response_summary(
         survey_id: Annotated[str, Field(description="Required survey ID.")],
     ) -> str:
         """Get per-question aggregated statistics for a survey's responses.
@@ -45,7 +45,7 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             return f"Error: {e}"
 
     @mcp.tool()
-    async def response_list(
+    async def mspbots_forms_response_list(
         survey_id: Annotated[str, Field(description="Required survey ID.")],
         status: Annotated[
             str | None, Field(description='Optional filter — "partial" or "completed".')
@@ -67,7 +67,7 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         """List individual survey responses, in a compact columnar format
         (columns + rows, not one repeated-key object per row) to save
         tokens. Only use this when you need to see actual individual
-        answers — for aggregate analysis, use response_summary instead.
+        answers — for aggregate analysis, use mspbots_forms_response_summary instead.
 
         Column names/order come from the survey's latest PUBLISHED version's
         definition — each response's answers pair with the definition that

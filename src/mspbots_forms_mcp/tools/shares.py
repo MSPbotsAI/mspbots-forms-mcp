@@ -20,7 +20,7 @@ _ACTION_TO_STATUS = {"pause": "paused", "resume": "active", "close": "closed"}
 
 def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) -> None:
     @mcp.tool()
-    async def share_list(
+    async def mspbots_forms_share_list(
         survey_id: Annotated[str, Field(description="Required survey ID.")],
     ) -> str:
         """List share links for a survey.
@@ -37,7 +37,7 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             return f"Error: {e}"
 
     @mcp.tool()
-    async def share_get(
+    async def mspbots_forms_share_get(
         share_id: Annotated[str, Field(description="Required share ID.")],
     ) -> str:
         """Get a share link's details.
@@ -54,7 +54,7 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             return f"Error: {e}"
 
     @mcp.tool()
-    async def share_create(
+    async def mspbots_forms_share_create(
         survey_id: Annotated[str, Field(description="Required survey ID to create a share for.")],
         survey_version_id: Annotated[
             str | None,
@@ -139,7 +139,7 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         ] = None,
     ) -> str:
         """Create a share link for a survey. The survey must have been
-        published at least once (survey_publish) — otherwise this returns
+        published at least once (mspbots_forms_survey_publish) — otherwise this returns
         409 conflict.
 
         API: POST /api/surveys/:surveyId/shares
@@ -173,7 +173,7 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             return f"Error: {e}"
 
     @mcp.tool()
-    async def share_update(
+    async def mspbots_forms_share_update(
         share_id: Annotated[str, Field(description="Required share ID.")],
         action: Annotated[
             str | None,
@@ -298,7 +298,7 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             return f"Error: {e}"
 
     @mcp.tool()
-    async def share_delete(
+    async def mspbots_forms_share_delete(
         share_id: Annotated[str, Field(description="Required share ID to delete.")],
         confirm: Annotated[
             bool, Field(description="Required — must be set to true to proceed.")
