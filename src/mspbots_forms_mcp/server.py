@@ -95,6 +95,27 @@ def create_mcp_server(settings: Settings) -> FastMCP:
     # correctly behind a reverse proxy or docker network.
     mcp = FastMCP(
         name="mspbots-forms-mcp",
+        instructions=(
+            "MSPbots Forms/Survey is a survey builder and response-collection "
+            "feature of the MSPbots platform: build surveys, publish them, "
+            "manage share links, and read back/analyze what respondents "
+            "submitted. Three tool groups: Survey (build/edit — "
+            "mspbots_forms_survey_list/get/create/update/publish/delete, plus "
+            "the composite mspbots_forms_survey_quick_publish which creates + "
+            "publishes + shares a new survey in one call), Share (distribution "
+            "policy for a published survey — mspbots_forms_share_list/get/"
+            "create/update/delete; audience can be public/workspace/passcode/"
+            "personal), and Response (mspbots_forms_response_summary for "
+            "aggregated per-question stats — call this FIRST for analysis "
+            "questions — and mspbots_forms_response_list for raw individual "
+            "answers in a compact columnar format). Typical flow: "
+            "survey_create -> survey_publish -> share_create to launch a "
+            "survey, or survey_quick_publish to do all three at once; later, "
+            "response_summary to see results, response_list only when "
+            "individual answers are needed. Delete tools are destructive and "
+            "require confirm=true. Public respondent-facing endpoints (submit/"
+            "unlock) are intentionally not exposed as tools."
+        ),
         transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     )
 

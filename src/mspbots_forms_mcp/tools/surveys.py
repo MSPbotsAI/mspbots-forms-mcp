@@ -6,19 +6,24 @@ Endpoint paths/params/response shapes below match that doc; none have been
 called against a real deployment. See README Known Gaps.
 """
 
-import json
 from collections.abc import Callable
 from typing import Annotated
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
+from .._json import dump_json_capped, error_envelope
 from ..api_client import FormsAPIClient, FormsAPIError
 from ._common import NO_TOKEN
 
+# Hard safety ceiling on top of the underlying API's own documented cap
+# (default 20, max 100) — we clamp to the tighter of the two (100).
+_MAX_LIMIT = 100
+
 
 def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) -> None:
-    @mcp.tool()
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     async def mspbots_forms_survey_list(
         status: Annotated[
             str | None, Field(description='Optional filter — "draft", "published", or "archived".')
@@ -39,14 +44,16 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         client = client_factory()
         if client is None:
             return NO_TOKEN
+        if limit is not None:
+            limit = min(limit, _MAX_LIMIT)
         params = {"status": status, "q": q, "cursor": cursor, "limit": limit}
         try:
             result = await client.get("/surveys", params=params)
-            return json.dumps(result, indent=2)
+            return dump_json_capped(result)
         except FormsAPIError as e:
-            return f"Error: {e}"
+            return e.to_envelope()
 
-    @mcp.tool()
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     async def mspbots_forms_survey_get(
         survey_id: Annotated[str, Field(description="Required survey ID.")],
         include: Annotated[
@@ -74,9 +81,9 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         params = {"include": ",".join(include) if include else None}
         try:
             result = await client.get(f"/surveys/{survey_id}", params=params)
-            return json.dumps(result, indent=2)
+            return dump_json_capped(result)
         except FormsAPIError as e:
-            return f"Error: {e}"
+            return e.to_envelope()
 
     @mcp.tool()
     async def mspbots_forms_survey_create(
@@ -134,11 +141,11 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             body["questions"] = questions
         try:
             result = await client.post("/surveys", json_body=body)
-            return json.dumps(result, indent=2)
+            return dump_json_capped(result)
         except FormsAPIError as e:
-            return f"Error: {e}"
+            return e.to_envelope()
 
-    @mcp.tool()
+    @mcp.tool(annotations=ToolAnnotations(idempotentHint=True))
     async def mspbots_forms_survey_update(
         survey_id: Annotated[str, Field(description="Required survey ID.")],
         title: Annotated[str | None, Field(description="Optional new title.")] = None,
@@ -204,9 +211,9 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             body["definition"] = definition
         try:
             result = await client.patch(f"/surveys/{survey_id}", json_body=body)
-            return json.dumps(result, indent=2)
+            return dump_json_capped(result)
         except FormsAPIError as e:
-            return f"Error: {e}"
+            return e.to_envelope()
 
     @mcp.tool()
     async def mspbots_forms_survey_publish(
@@ -224,11 +231,11 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             return NO_TOKEN
         try:
             result = await client.post(f"/surveys/{survey_id}/versions")
-            return json.dumps(result, indent=2)
+            return dump_json_capped(result)
         except FormsAPIError as e:
-            return f"Error: {e}"
+            return e.to_envelope()
 
-    @mcp.tool()
+    @mcp.tool(annotations=ToolAnnotations(destructiveHint=True))
     async def mspbots_forms_survey_delete(
         survey_id: Annotated[str, Field(description="Required survey ID to delete.")],
         confirm: Annotated[
@@ -249,15 +256,17 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         API: DELETE /api/surveys/:surveyId
         """
         if not confirm:
-            return "Error: destructive operation requires confirm=true"
+            return error_envelope(
+                "invalid_argument", "Destructive operation requires confirm=true", False
+            )
         client = client_factory()
         if client is None:
             return NO_TOKEN
         try:
             result = await client.delete(f"/surveys/{survey_id}")
-            return json.dumps(result, indent=2)
+            return dump_json_capped(result)
         except FormsAPIError as e:
-            return f"Error: {e}"
+            return e.to_envelope()
 
     @mcp.tool()
     async def mspbots_forms_survey_quick_publish(
@@ -285,15 +294,14 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             ),
         ] = "public",
     ) -> str:
-        """Convenience tool: create a survey, publish it, and create a share
-        link, in one call. Composite tool implemented by chaining
-        mspbots_forms_survey_create + mspbots_forms_survey_publish + a share-create call — there is no
-        single backing REST endpoint for this; if any step fails partway,
-        earlier steps are NOT rolled back (the survey/version may already
-        exist even if share creation fails).
+        """Create a survey, publish it, and create a share link, in one call.
 
-        Only for brand-new surveys — to edit questions/title on a survey
-        that already exists, use mspbots_forms_survey_update instead.
+        Chains create + publish + share-create — no single backing
+        endpoint, so a partial failure is NOT rolled back (survey/version
+        may already exist even if share creation fails).
+
+        Only for brand-new surveys — to edit an existing one, use
+        mspbots_forms_survey_update instead.
         """
         client = client_factory()
         if client is None:
@@ -309,11 +317,15 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             survey = await client.post("/surveys", json_body=create_body)
             survey_id = survey.get("id") if isinstance(survey, dict) else None
             if not survey_id:
-                return f"Error: survey created but no id in response: {json.dumps(survey)}"
+                return error_envelope(
+                    "upstream_error",
+                    f"Survey created but no id in response: {dump_json_capped(survey)}",
+                    False,
+                )
             version = await client.post(f"/surveys/{survey_id}/versions")
             share = await client.post(
                 f"/surveys/{survey_id}/shares", json_body={"audience": audience}
             )
-            return json.dumps({"survey": survey, "version": version, "share": share}, indent=2)
+            return dump_json_capped({"survey": survey, "version": version, "share": share})
         except FormsAPIError as e:
-            return f"Error: {e}"
+            return e.to_envelope()

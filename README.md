@@ -62,7 +62,7 @@ python -m mspbots_forms_mcp
 
 ```bash
 curl http://localhost:8080/health
-# {"status": "ok", "service": "mspbots-forms-mcp", "transport": "http"}
+# {"status": "ok"}
 ```
 
 No credentials are required for the health endpoint.

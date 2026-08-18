@@ -5,13 +5,14 @@ PRD-15818 (per Leo Yang's comment), not by reading the actual backend repo.
 See README Known Gaps.
 """
 
-import json
 from collections.abc import Callable
 from typing import Annotated
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
+from .._json import dump_json_capped, error_envelope
 from ..api_client import FormsAPIClient, FormsAPIError
 from ._common import NO_TOKEN
 
@@ -19,7 +20,7 @@ _ACTION_TO_STATUS = {"pause": "paused", "resume": "active", "close": "closed"}
 
 
 def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) -> None:
-    @mcp.tool()
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     async def mspbots_forms_share_list(
         survey_id: Annotated[str, Field(description="Required survey ID.")],
     ) -> str:
@@ -32,11 +33,11 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             return NO_TOKEN
         try:
             result = await client.get(f"/surveys/{survey_id}/shares")
-            return json.dumps(result, indent=2)
+            return dump_json_capped(result)
         except FormsAPIError as e:
-            return f"Error: {e}"
+            return e.to_envelope()
 
-    @mcp.tool()
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     async def mspbots_forms_share_get(
         share_id: Annotated[str, Field(description="Required share ID.")],
     ) -> str:
@@ -49,9 +50,9 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             return NO_TOKEN
         try:
             result = await client.get(f"/shares/{share_id}")
-            return json.dumps(result, indent=2)
+            return dump_json_capped(result)
         except FormsAPIError as e:
-            return f"Error: {e}"
+            return e.to_envelope()
 
     @mcp.tool()
     async def mspbots_forms_share_create(
@@ -168,11 +169,11 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             body["prefill"] = prefill
         try:
             result = await client.post(f"/surveys/{survey_id}/shares", json_body=body)
-            return json.dumps(result, indent=2)
+            return dump_json_capped(result)
         except FormsAPIError as e:
-            return f"Error: {e}"
+            return e.to_envelope()
 
-    @mcp.tool()
+    @mcp.tool(annotations=ToolAnnotations(idempotentHint=True))
     async def mspbots_forms_share_update(
         share_id: Annotated[str, Field(description="Required share ID.")],
         action: Annotated[
@@ -267,12 +268,16 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         try:
             if action == "rotate":
                 result = await client.post(f"/shares/{share_id}/token")
-                return json.dumps(result, indent=2)
+                return dump_json_capped(result)
             body: dict = {}
             if action in _ACTION_TO_STATUS:
                 body["status"] = _ACTION_TO_STATUS[action]
             elif action is not None:
-                return f"Error: unknown action '{action}' — expected pause, resume, close, or rotate"
+                return error_envelope(
+                    "invalid_argument",
+                    f"Unknown action '{action}' — expected pause, resume, close, or rotate",
+                    False,
+                )
             else:
                 if audience is not None:
                     body["audience"] = audience
@@ -293,11 +298,11 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
                 if prefill is not None:
                     body["prefill"] = prefill
             result = await client.patch(f"/shares/{share_id}", json_body=body)
-            return json.dumps(result, indent=2)
+            return dump_json_capped(result)
         except FormsAPIError as e:
-            return f"Error: {e}"
+            return e.to_envelope()
 
-    @mcp.tool()
+    @mcp.tool(annotations=ToolAnnotations(destructiveHint=True))
     async def mspbots_forms_share_delete(
         share_id: Annotated[str, Field(description="Required share ID to delete.")],
         confirm: Annotated[
@@ -312,12 +317,14 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         API: DELETE /api/shares/:shareId
         """
         if not confirm:
-            return "Error: destructive operation requires confirm=true"
+            return error_envelope(
+                "invalid_argument", "Destructive operation requires confirm=true", False
+            )
         client = client_factory()
         if client is None:
             return NO_TOKEN
         try:
             result = await client.delete(f"/shares/{share_id}")
-            return json.dumps(result, indent=2)
+            return dump_json_capped(result)
         except FormsAPIError as e:
-            return f"Error: {e}"
+            return e.to_envelope()
