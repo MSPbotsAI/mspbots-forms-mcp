@@ -251,8 +251,8 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             ),
         ] = None,
     ) -> str:
-        """Update a share link's policy, or perform a lifecycle action.
-        changes, OR POST /api/shares/:shareId/token for action="rotate".
+        """Update a share link's policy, or perform a lifecycle action
+        (pause/resume/close/rotate) via the `action` parameter.
         """
         client = client_factory()
         if client is None:
