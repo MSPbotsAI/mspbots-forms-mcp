@@ -12,7 +12,7 @@ parameters, and descriptions here say "form".
 """
 
 from collections.abc import Callable
-from typing import Annotated
+from typing import Annotated, Literal
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
@@ -154,15 +154,24 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         questions: Annotated[
             list[dict] | None,
             Field(
-                description="Optional flat question list (DSL) — replaces the current question set."
+                description=(
+                    "Optional flat question list (DSL) — FULL REPLACE of the "
+                    "current question set, not a patch. To add/edit/remove a "
+                    "single question, first call mspbots_forms_form_get(form_id, "
+                    "include=['questions']) to fetch the current list, apply your "
+                    "change, and pass the complete resulting array here — any "
+                    "question you omit is permanently removed."
+                )
             ),
         ] = None,
         pages: Annotated[
             list[dict] | None,
             Field(
                 description=(
-                    "Optional multi-page question list (DSL) — replaces the "
-                    "current question set. Takes precedence over questions if both given."
+                    "Optional multi-page question list (DSL) — FULL REPLACE of "
+                    "the current question set (same fetch-then-merge caveat as "
+                    "questions; see its description). Takes precedence over "
+                    "questions if both given."
                 )
             ),
         ] = None,
@@ -246,6 +255,12 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         """Delete a form — permanently removes it along with all its
         published versions, share links, AND collected responses.
 
+        Only set confirm=true on an explicit, unambiguous delete request
+        ("delete it", "delete form X for good") — vague retirement talk
+        ("we don't need it anymore") should prompt a confirmation question
+        instead. To just stop new submissions, use
+        mspbots_forms_share_update (action="pause"/"close") instead.
+
         ⚠️ DESTRUCTIVE. Requires confirm=true.
         """
         if not confirm:
@@ -276,13 +291,14 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             bool | None, Field(description="Optional progress-bar setting.")
         ] = None,
         audience: Annotated[
-            str,
+            Literal["public", "workspace"],
             Field(
                 description=(
-                    'Share audience — "public", "workspace", "passcode", or '
-                    '"personal" (default "public"). For "passcode" or "personal", '
-                    "use mspbots_forms_share_create afterward instead to set the required "
-                    "passcode/recipient field — this tool doesn't accept those."
+                    'Share audience for the auto-created link — "public" or '
+                    '"workspace" only (default "public"). For "passcode" or '
+                    '"personal", call mspbots_forms_share_create afterward instead '
+                    "to set the required passcode/recipient field — this tool "
+                    "doesn't accept those."
                 )
             ),
         ] = "public",

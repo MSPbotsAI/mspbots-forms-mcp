@@ -175,8 +175,11 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             Field(
                 description=(
                     'Optional convenience action — "pause" (status=paused), '
-                    '"resume" (status=active), "close" (status=closed, a soft '
-                    'close), or "rotate" (issues a new token; the old link '
+                    '"resume" (status=active), "close" (status=closed, a soft, '
+                    'REVERSIBLE close — resume with action="resume" later; use '
+                    "mspbots_forms_share_delete instead if the user wants the "
+                    'share link permanently removed, not just paused), or '
+                    '"rotate" (issues a new token; the old link '
                     "immediately stops working, but already-collected responses "
                     "stay attached to this same share). Mutually exclusive with "
                     "the policy fields below — if action is given, the other "
@@ -301,8 +304,14 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             bool, Field(description="Required — must be set to true to proceed.")
         ],
     ) -> str:
-        """Delete a share link. Collected responses are preserved — they
-        still have analytical value even after the link is gone.
+        """Permanently remove the share link record itself. Collected
+        responses are preserved — they still have analytical value even
+        after the link is gone.
+
+        Not reversible. If the user only wants to stop new submissions
+        (and might turn it back on later), use mspbots_forms_share_update
+        with action="close" (or "pause") instead — this delete is for when
+        the share link should stop existing entirely.
 
         ⚠️ DESTRUCTIVE. Requires confirm=true.
         """
