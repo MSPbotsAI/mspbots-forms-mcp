@@ -68,7 +68,7 @@ class GatewayTokenMiddleware:
                     "error": "Missing credentials",
                     "message": (
                         "This server requires the X-MSP-Token header (Agent Platform "
-                        "bearer access credential), the X-MSP-Host header (Forms/Survey "
+                        "bearer access credential), the X-MSP-Host header (Forms "
                         "API host), and the X-MSP-Tenant-Id header (tenant ID, forwarded "
                         "downstream as the X_Tenant_ID cookie the app-routing gateway "
                         "requires)"
@@ -96,21 +96,21 @@ def create_mcp_server(settings: Settings) -> FastMCP:
     mcp = FastMCP(
         name="mspbots-forms-mcp",
         instructions=(
-            "MSPbots Forms/Survey is a survey builder and response-collection "
-            "feature of the MSPbots platform: build surveys, publish them, "
+            "MSPbots Forms is a form builder and response-collection "
+            "feature of the MSPbots platform: build forms, publish them, "
             "manage share links, and read back/analyze what respondents "
-            "submitted. Three tool groups: Survey (build/edit — "
-            "mspbots_forms_survey_list/get/create/update/publish/delete, plus "
-            "the composite mspbots_forms_survey_quick_publish which creates + "
-            "publishes + shares a new survey in one call), Share (distribution "
-            "policy for a published survey — mspbots_forms_share_list/get/"
+            "submitted. Three tool groups: Form (build/edit — "
+            "mspbots_forms_form_list/get/create/update/publish/delete, plus "
+            "the composite mspbots_forms_form_quick_publish which creates + "
+            "publishes + shares a new form in one call), Share (distribution "
+            "policy for a published form — mspbots_forms_share_list/get/"
             "create/update/delete; audience can be public/workspace/passcode/"
             "personal), and Response (mspbots_forms_response_summary for "
             "aggregated per-question stats — call this FIRST for analysis "
             "questions — and mspbots_forms_response_list for raw individual "
             "answers in a compact columnar format). Typical flow: "
-            "survey_create -> survey_publish -> share_create to launch a "
-            "survey, or survey_quick_publish to do all three at once; later, "
+            "form_create -> form_publish -> share_create to launch a "
+            "form, or form_quick_publish to do all three at once; later, "
             "response_summary to see results, response_list only when "
             "individual answers are needed. Delete tools are destructive and "
             "require confirm=true. Public respondent-facing endpoints (submit/"
@@ -121,9 +121,9 @@ def create_mcp_server(settings: Settings) -> FastMCP:
 
     client_factory: Callable[[], FormsAPIClient | None] = lambda: get_client_from_context(settings)
 
-    from .tools import responses, shares, surveys
+    from .tools import forms, responses, shares
 
-    surveys.register(mcp, client_factory)
+    forms.register(mcp, client_factory)
     shares.register(mcp, client_factory)
     responses.register(mcp, client_factory)
 

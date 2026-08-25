@@ -71,7 +71,7 @@ class FormsAPIError(Exception):
 
 
 class FormsAPIClient:
-    """Async httpx client wrapping the MSPbots Forms/Survey API.
+    """Async httpx client wrapping the MSPbots Forms API.
 
     Auth: a platform JWT forwarded as "Authorization: Bearer <token>", PLUS
     a tenant ID sent as the "X_Tenant_ID" cookie. The API contract claimed

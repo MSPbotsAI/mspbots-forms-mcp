@@ -1,9 +1,14 @@
-"""Survey (form definition) tools.
+"""Form (form definition) tools.
 
 ⚠️ UNVERIFIED — built entirely from the API contract pasted into ClickUp
 PRD-15818 (per Leo Yang's comment), not by reading the actual backend repo.
 Endpoint paths/params/response shapes below match that doc; none have been
 called against a real deployment. See README Known Gaps.
+
+Note: the underlying REST API's own paths/fields still say "survey"
+(`/surveys`, `surveyVersionId`, ...) — those are the real backend's wire
+contract and are left untouched. Only the agent-facing tool names,
+parameters, and descriptions here say "form".
 """
 
 from collections.abc import Callable
@@ -24,7 +29,7 @@ _MAX_LIMIT = 100
 
 def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) -> None:
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
-    async def mspbots_forms_survey_list(
+    async def mspbots_forms_form_list(
         status: Annotated[
             str | None, Field(description='Optional filter — "draft", "published", or "archived".')
         ] = None,
@@ -37,7 +42,7 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             int | None, Field(description="Optional page size (default 20, max 100 — server clamps).")
         ] = None,
     ) -> str:
-        """List surveys (form summaries) for the current tenant.
+        """List forms (form summaries) for the current tenant.
         """
         client = client_factory()
         if client is None:
@@ -52,8 +57,8 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             return e.to_envelope()
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
-    async def mspbots_forms_survey_get(
-        survey_id: Annotated[str, Field(description="Required survey ID.")],
+    async def mspbots_forms_form_get(
+        form_id: Annotated[str, Field(description="Required form ID.")],
         include: Annotated[
             list[str] | None,
             Field(
@@ -66,7 +71,7 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             ),
         ] = None,
     ) -> str:
-        """Get a survey's details.
+        """Get a form's details.
 
         By default only the base record is returned — no definition,
         questions, or versions — since the full definition can be several KB.
@@ -76,14 +81,14 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             return NO_TOKEN
         params = {"include": ",".join(include) if include else None}
         try:
-            result = await client.get(f"/surveys/{survey_id}", params=params)
+            result = await client.get(f"/surveys/{form_id}", params=params)
             return dump_json_capped(result)
         except FormsAPIError as e:
             return e.to_envelope()
 
     @mcp.tool()
-    async def mspbots_forms_survey_create(
-        title: Annotated[str, Field(description="Required survey title.")],
+    async def mspbots_forms_form_create(
+        title: Annotated[str, Field(description="Required form title.")],
         questions: Annotated[
             list[dict] | None,
             Field(
@@ -98,7 +103,7 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             Field(
                 description=(
                     'Optional list of {"title": str?, "questions": [...]} for a '
-                    "multi-page survey. Takes precedence over questions if both given."
+                    "multi-page form. Takes precedence over questions if both given."
                 )
             ),
         ] = None,
@@ -106,7 +111,7 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             bool | None, Field(description="Optional, whether to show a progress bar.")
         ] = None,
     ) -> str:
-        """Create a new survey (draft, unpublished).
+        """Create a new form (draft, unpublished).
 
         Uses the friendly question DSL, not raw SurveyJS JSON — the server
         translates via a kind-mapping table. Supported `kind` values: "text",
@@ -140,8 +145,8 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             return e.to_envelope()
 
     @mcp.tool(annotations=ToolAnnotations(idempotentHint=True))
-    async def mspbots_forms_survey_update(
-        survey_id: Annotated[str, Field(description="Required survey ID.")],
+    async def mspbots_forms_form_update(
+        form_id: Annotated[str, Field(description="Required form ID.")],
         title: Annotated[str | None, Field(description="Optional new title.")] = None,
         show_progress_bar: Annotated[
             bool | None, Field(description="Optional new progress-bar setting.")
@@ -173,15 +178,15 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             ),
         ] = None,
     ) -> str:
-        """Update a survey's draft. Only affects the working draft — published
+        """Update a form's draft. Only affects the working draft — published
         versions are immutable snapshots unaffected by this call.
 
-        Use this to edit a survey that already exists (e.g. one created via
-        mspbots_forms_survey_create); for spinning up a brand-new survey and getting it
-        live in one step, use mspbots_forms_survey_quick_publish instead.
+        Use this to edit a form that already exists (e.g. one created via
+        mspbots_forms_form_create); for spinning up a brand-new form and getting it
+        live in one step, use mspbots_forms_form_quick_publish instead.
 
         Give either questions/pages (friendly DSL, full replace of the
-        question set — same rules as mspbots_forms_survey_create) OR definition (raw
+        question set — same rules as mspbots_forms_form_create) OR definition (raw
         SurveyJS JSON, for advanced edits the DSL can't express — e.g.
         custom validators or choicesByUrl). If definition is given, it's a
         shallow merge — properties the DSL/Builder don't recognize are left
@@ -202,16 +207,16 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         if definition is not None:
             body["definition"] = definition
         try:
-            result = await client.patch(f"/surveys/{survey_id}", json_body=body)
+            result = await client.patch(f"/surveys/{form_id}", json_body=body)
             return dump_json_capped(result)
         except FormsAPIError as e:
             return e.to_envelope()
 
     @mcp.tool()
-    async def mspbots_forms_survey_publish(
-        survey_id: Annotated[str, Field(description="Required survey ID to publish.")],
+    async def mspbots_forms_form_publish(
+        form_id: Annotated[str, Field(description="Required form ID to publish.")],
     ) -> str:
-        """Publish a survey — creates an immutable version snapshot of its
+        """Publish a form — creates an immutable version snapshot of its
         current draft. Share links bind to this version, so answers stay
         paired with the question set that was live when they were collected,
         even if the draft changes afterward.
@@ -220,14 +225,14 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         if client is None:
             return NO_TOKEN
         try:
-            result = await client.post(f"/surveys/{survey_id}/versions")
+            result = await client.post(f"/surveys/{form_id}/versions")
             return dump_json_capped(result)
         except FormsAPIError as e:
             return e.to_envelope()
 
     @mcp.tool(annotations=ToolAnnotations(destructiveHint=True))
-    async def mspbots_forms_survey_delete(
-        survey_id: Annotated[str, Field(description="Required survey ID to delete.")],
+    async def mspbots_forms_form_delete(
+        form_id: Annotated[str, Field(description="Required form ID to delete.")],
         confirm: Annotated[
             bool,
             Field(
@@ -238,7 +243,7 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             ),
         ],
     ) -> str:
-        """Delete a survey — permanently removes it along with all its
+        """Delete a form — permanently removes it along with all its
         published versions, share links, AND collected responses.
 
         ⚠️ DESTRUCTIVE. Requires confirm=true.
@@ -251,21 +256,21 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         if client is None:
             return NO_TOKEN
         try:
-            result = await client.delete(f"/surveys/{survey_id}")
+            result = await client.delete(f"/surveys/{form_id}")
             return dump_json_capped(result)
         except FormsAPIError as e:
             return e.to_envelope()
 
     @mcp.tool()
-    async def mspbots_forms_survey_quick_publish(
-        title: Annotated[str, Field(description="Required survey title.")],
+    async def mspbots_forms_form_quick_publish(
+        title: Annotated[str, Field(description="Required form title.")],
         questions: Annotated[
             list[dict] | None,
-            Field(description="Optional flat question list (DSL) — see mspbots_forms_survey_create."),
+            Field(description="Optional flat question list (DSL) — see mspbots_forms_form_create."),
         ] = None,
         pages: Annotated[
             list[dict] | None,
-            Field(description="Optional multi-page question list (DSL) — see mspbots_forms_survey_create."),
+            Field(description="Optional multi-page question list (DSL) — see mspbots_forms_form_create."),
         ] = None,
         show_progress_bar: Annotated[
             bool | None, Field(description="Optional progress-bar setting.")
@@ -282,14 +287,14 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             ),
         ] = "public",
     ) -> str:
-        """Create a survey, publish it, and create a share link, in one call.
+        """Create a form, publish it, and create a share link, in one call.
 
         Chains create + publish + share-create — no single backing
-        endpoint, so a partial failure is NOT rolled back (survey/version
+        endpoint, so a partial failure is NOT rolled back (form/version
         may already exist even if share creation fails).
 
-        Only for brand-new surveys — to edit an existing one, use
-        mspbots_forms_survey_update instead.
+        Only for brand-new forms — to edit an existing one, use
+        mspbots_forms_form_update instead.
         """
         client = client_factory()
         if client is None:
@@ -302,18 +307,18 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         elif questions is not None:
             create_body["questions"] = questions
         try:
-            survey = await client.post("/surveys", json_body=create_body)
-            survey_id = survey.get("id") if isinstance(survey, dict) else None
-            if not survey_id:
+            form = await client.post("/surveys", json_body=create_body)
+            form_id = form.get("id") if isinstance(form, dict) else None
+            if not form_id:
                 return error_envelope(
                     "upstream_error",
-                    f"Survey created but no id in response: {dump_json_capped(survey)}",
+                    f"Form created but no id in response: {dump_json_capped(form)}",
                     False,
                 )
-            version = await client.post(f"/surveys/{survey_id}/versions")
+            version = await client.post(f"/surveys/{form_id}/versions")
             share = await client.post(
-                f"/surveys/{survey_id}/shares", json_body={"audience": audience}
+                f"/surveys/{form_id}/shares", json_body={"audience": audience}
             )
-            return dump_json_capped({"survey": survey, "version": version, "share": share})
+            return dump_json_capped({"form": form, "version": version, "share": share})
         except FormsAPIError as e:
             return e.to_envelope()

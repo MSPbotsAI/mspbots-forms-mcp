@@ -22,15 +22,15 @@ _ACTION_TO_STATUS = {"pause": "paused", "resume": "active", "close": "closed"}
 def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) -> None:
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     async def mspbots_forms_share_list(
-        survey_id: Annotated[str, Field(description="Required survey ID.")],
+        form_id: Annotated[str, Field(description="Required form ID.")],
     ) -> str:
-        """List share links for a survey.
+        """List share links for a form.
         """
         client = client_factory()
         if client is None:
             return NO_TOKEN
         try:
-            result = await client.get(f"/surveys/{survey_id}/shares")
+            result = await client.get(f"/surveys/{form_id}/shares")
             return dump_json_capped(result)
         except FormsAPIError as e:
             return e.to_envelope()
@@ -52,8 +52,8 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
 
     @mcp.tool()
     async def mspbots_forms_share_create(
-        survey_id: Annotated[str, Field(description="Required survey ID to create a share for.")],
-        survey_version_id: Annotated[
+        form_id: Annotated[str, Field(description="Required form ID to create a share for.")],
+        form_version_id: Annotated[
             str | None,
             Field(
                 description=(
@@ -106,7 +106,7 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             Field(
                 description=(
                     "Optional, whether respondents can save progress and "
-                    "resume later. Note: single-page surveys have no page-turn "
+                    "resume later. Note: single-page forms have no page-turn "
                     "event, so progress can't be saved regardless of this setting."
                 )
             ),
@@ -135,16 +135,16 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             Field(description="Optional dict of answers to pre-fill for respondents."),
         ] = None,
     ) -> str:
-        """Create a share link for a survey. The survey must have been
-        published at least once (mspbots_forms_survey_publish) — otherwise this returns
+        """Create a share link for a form. The form must have been
+        published at least once (mspbots_forms_form_publish) — otherwise this returns
         409 conflict.
         """
         client = client_factory()
         if client is None:
             return NO_TOKEN
         body: dict = {"audience": audience}
-        if survey_version_id is not None:
-            body["surveyVersionId"] = survey_version_id
+        if form_version_id is not None:
+            body["surveyVersionId"] = form_version_id
         if passcode is not None:
             body["passcode"] = passcode
         if recipient is not None:
@@ -162,7 +162,7 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         if prefill is not None:
             body["prefill"] = prefill
         try:
-            result = await client.post(f"/surveys/{survey_id}/shares", json_body=body)
+            result = await client.post(f"/surveys/{form_id}/shares", json_body=body)
             return dump_json_capped(result)
         except FormsAPIError as e:
             return e.to_envelope()

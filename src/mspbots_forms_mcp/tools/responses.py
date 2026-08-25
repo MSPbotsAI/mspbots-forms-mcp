@@ -24,9 +24,9 @@ _MAX_LIMIT = 100
 def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) -> None:
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     async def mspbots_forms_response_summary(
-        survey_id: Annotated[str, Field(description="Required survey ID.")],
+        form_id: Annotated[str, Field(description="Required form ID.")],
     ) -> str:
-        """Get per-question aggregated statistics for a survey's responses.
+        """Get per-question aggregated statistics for a form's responses.
 
         Call this FIRST for analysis — a compact summary, not raw rows.
         Includes totalStarted, totalCompleted, completionRate, and
@@ -38,14 +38,14 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         if client is None:
             return NO_TOKEN
         try:
-            result = await client.get(f"/surveys/{survey_id}/responses/summary")
+            result = await client.get(f"/surveys/{form_id}/responses/summary")
             return dump_json_capped(result)
         except FormsAPIError as e:
             return e.to_envelope()
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     async def mspbots_forms_response_list(
-        survey_id: Annotated[str, Field(description="Required survey ID.")],
+        form_id: Annotated[str, Field(description="Required form ID.")],
         status: Annotated[
             str | None, Field(description='Optional filter — "partial" or "completed".')
         ] = None,
@@ -63,11 +63,11 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             int | None, Field(description="Optional page size (default 20, max 100).")
         ] = None,
     ) -> str:
-        """List individual survey responses in a compact columnar format
+        """List individual form responses in a compact columnar format
         (columns + rows, not one object per row). Only for actual
         individual answers — for aggregates use mspbots_forms_response_summary.
 
-        Columns come from the survey's latest PUBLISHED version's
+        Columns come from the form's latest PUBLISHED version's
         definition, so headers track the version live when each batch of
         rows was collected, not necessarily the current draft.
         """
@@ -78,7 +78,7 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             limit = min(limit, _MAX_LIMIT)
         params = {"status": status, "shareId": share_id, "cursor": cursor, "limit": limit}
         try:
-            result = await client.get(f"/surveys/{survey_id}/responses", params=params)
+            result = await client.get(f"/surveys/{form_id}/responses", params=params)
             return dump_json_capped(result)
         except FormsAPIError as e:
             return e.to_envelope()

@@ -17,29 +17,29 @@ from mspbots_forms_mcp.server import create_mcp_server
 # Tool names carry the mspbots_forms_ prefix added in a prior rename pass —
 # any signature change here is a breaking contract change (SOP §13).
 EXPECTED_TOOLS = {
-    "mspbots_forms_survey_list": (set(), {"readOnlyHint": True}),
-    "mspbots_forms_survey_get": ({"survey_id"}, {"readOnlyHint": True}),
-    "mspbots_forms_survey_create": ({"title"}, {}),
-    "mspbots_forms_survey_update": ({"survey_id"}, {"idempotentHint": True}),
-    "mspbots_forms_survey_publish": ({"survey_id"}, {}),
-    "mspbots_forms_survey_delete": ({"survey_id", "confirm"}, {"destructiveHint": True}),
-    "mspbots_forms_survey_quick_publish": ({"title"}, {}),
-    "mspbots_forms_share_list": ({"survey_id"}, {"readOnlyHint": True}),
+    "mspbots_forms_form_list": (set(), {"readOnlyHint": True}),
+    "mspbots_forms_form_get": ({"form_id"}, {"readOnlyHint": True}),
+    "mspbots_forms_form_create": ({"title"}, {}),
+    "mspbots_forms_form_update": ({"form_id"}, {"idempotentHint": True}),
+    "mspbots_forms_form_publish": ({"form_id"}, {}),
+    "mspbots_forms_form_delete": ({"form_id", "confirm"}, {"destructiveHint": True}),
+    "mspbots_forms_form_quick_publish": ({"title"}, {}),
+    "mspbots_forms_share_list": ({"form_id"}, {"readOnlyHint": True}),
     "mspbots_forms_share_get": ({"share_id"}, {"readOnlyHint": True}),
-    "mspbots_forms_share_create": ({"survey_id"}, {}),
+    "mspbots_forms_share_create": ({"form_id"}, {}),
     "mspbots_forms_share_update": ({"share_id"}, {"idempotentHint": True}),
     "mspbots_forms_share_delete": ({"share_id", "confirm"}, {"destructiveHint": True}),
-    "mspbots_forms_response_summary": ({"survey_id"}, {"readOnlyHint": True}),
-    "mspbots_forms_response_list": ({"survey_id"}, {"readOnlyHint": True}),
+    "mspbots_forms_response_summary": ({"form_id"}, {"readOnlyHint": True}),
+    "mspbots_forms_response_list": ({"form_id"}, {"readOnlyHint": True}),
 }
 
-# mspbots_forms_survey_create/_update genuinely need their long DSL
+# mspbots_forms_form_create/_update genuinely need their long DSL
 # explanation (question `kind` values, showIf semantics) to let an agent
 # construct valid nested arguments — an earlier blind usability test found
 # that explanation was the most valuable part of these docstrings. They are
 # intentionally exempt from the <=500 char budget (SOP §2.2 is "应当", not
 # "必须") rather than gutted to fit.
-_DESCRIPTION_LENGTH_EXEMPT = {"mspbots_forms_survey_create", "mspbots_forms_survey_update"}
+_DESCRIPTION_LENGTH_EXEMPT = {"mspbots_forms_form_create", "mspbots_forms_form_update"}
 
 
 @pytest.mark.asyncio
