@@ -117,6 +117,8 @@ def create_mcp_server(settings: Settings) -> FastMCP:
             "unlock) are intentionally not exposed as tools."
         ),
         transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+        stateless_http=True,
+        json_response=True,
     )
 
     client_factory: Callable[[], FormsAPIClient | None] = lambda: get_client_from_context(settings)
