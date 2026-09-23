@@ -74,9 +74,16 @@ Every request to `/mcp` must include the following HTTP headers:
 
 | Header | 类型 | 是否必填 | 默认值 | 枚举值 | 字段描述 | Example |
 |---|---|---|---|---|---|---|
-| `X-MSP-Token` | string | 必填 | 无 | 无(自由文本,JWT) | Agent Platform 已签发的访问凭证(平台 JWT)。本服务原样转发为下游请求的 `Authorization: Bearer <token>`。 | `X-MSP-Token: eyJhbGciOiJFZERTQSJ9...` |
+| `X-API-Key` | string | 必填 | 无 | 无(自由文本,JWT) | Agent Platform 已签发的访问凭证(平台 JWT)。本服务原样转发为下游请求的 `Authorization: Bearer <token>`。 | `X-API-Key: eyJhbGciOiJFZERTQSJ9...` |
 | `X-MSP-Host` | string | 必填 | 无 | 无(自由文本,base URL) | Forms API 所在的 host。本服务会拼接 `/apps/app-forms/api/<endpoint>` 得到完整请求地址(**实测确认**的真实路径,契约文档只写了裸的 `/api/<endpoint>`,没提这个 `/apps/app-forms` 前缀)。**2026-08-26更新**：此前记录"App 只部署在 PROD、网关固定转发到 PROD"已过时——实测 `app-forms` 现在也有真实 INT 部署，走网关的请求会正确按环境路由（INT 租户拿到的是 INT 数据），不再固定转发 PROD。 | `X-MSP-Host: https://agent.mspbots.ai` |
 | `X-MSP-Tenant-Id` | string | 必填 | 无 | 无(自由文本,UUID) | 租户 ID。契约文档说租户完全从 token 解析、不需要额外传——**实测证明这只对业务层成立**:APISIX 的 app 路由网关在拿到租户信息之前就会 404("App not found"),必须靠这个值。本服务把它转发为下游请求的 **`X_Tenant_ID` cookie**(不是 header——这是实测才发现的,契约完全没提)。 | `X-MSP-Tenant-Id: e9f794fe-a6b4-4f35-bd2f-fcd19c5cc308` |
+
+> ⏳ **过渡期兼容（2026-09-23 起）**：`X-API-Key` 取代了原来的 `X-MSP-Token`。改名前写入的
+> 租户凭据仍以旧名存在注册库里、由网关原样注入，因此中间件在读不到 `X-API-Key` 时会回退读
+> `X-MSP-Token`；两个都在时以 `X-API-Key` 为准。等所有租户凭据都按新名重存一遍后，删掉
+> `server.py` 里那段回退和 `tests/test_middleware.py::test_legacy_token_header_is_still_accepted`。
+>
+> `X-MSP-Tenant-Id` **不受本次改名影响**，仍然必填，仍然转发给下游。
 
 Missing any of the three headers returns `401 Unauthorized`.
 
@@ -95,7 +102,7 @@ POST http://localhost:8080/mcp
 
 Connect your MCP client with:
 - Transport: `http` (Streamable HTTP)
-- Headers: `X-MSP-Token`, `X-MSP-Host`, `X-MSP-Tenant-Id` (all required)
+- Headers: `X-API-Key`, `X-MSP-Host`, `X-MSP-Tenant-Id` (all required)
 
 ## Question DSL (for `mspbots_forms_form_create` / `mspbots_forms_form_update`)
 
@@ -121,7 +128,7 @@ Multi-page forms use `pages: [{title?, questions: [...]}]` instead of a flat `qu
 ```bash
 curl -X POST http://localhost:8080/mcp \
   -H "Content-Type: application/json" \
-  -H "X-MSP-Token: <token>" \
+  -H "X-API-Key: <token>" \
   -H "X-MSP-Host: https://agent.mspbots.ai" \
   -H "X-MSP-Tenant-Id: <tenant-id>" \
   -d '{

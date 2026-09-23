@@ -31,7 +31,7 @@ def get_client_from_context(settings: Settings) -> FormsAPIClient | None:
 class GatewayTokenMiddleware:
     """ASGI middleware.
 
-    Reads X-MSP-Token, X-MSP-Host, and X-MSP-Tenant-Id (all required) from
+    Reads X-API-Key, X-MSP-Host, and X-MSP-Tenant-Id (all required) from
     request headers and stores them in the contextvar. Returns 401 if any
     is missing on /mcp requests.
 
@@ -59,7 +59,15 @@ class GatewayTokenMiddleware:
             return
 
         request = Request(scope)
-        token = request.headers.get("x-msp-token")
+        token = request.headers.get("x-api-key")
+        if not token:
+            # NOTE(transition, 2026-09-23): X-API-Key replaced X-MSP-Token as the
+            # credential header name. Credential rows written before the rename
+            # still hold the old key and the gateway injects whatever is stored,
+            # so keep honouring it until every tenant's credential has been
+            # re-saved under X-API-Key. Remove this fallback — and
+            # test_legacy_token_header_is_still_accepted — once that is done.
+            token = request.headers.get("x-msp-token")
         host = request.headers.get("x-msp-host")
         tenant_id = request.headers.get("x-msp-tenant-id")
         if not token or not host or not tenant_id:
@@ -67,13 +75,13 @@ class GatewayTokenMiddleware:
                 {
                     "error": "Missing credentials",
                     "message": (
-                        "This server requires the X-MSP-Token header (Agent Platform "
+                        "This server requires the X-API-Key header (Agent Platform "
                         "bearer access credential), the X-MSP-Host header (Forms "
                         "API host), and the X-MSP-Tenant-Id header (tenant ID, forwarded "
                         "downstream as the X_Tenant_ID cookie the app-routing gateway "
                         "requires)"
                     ),
-                    "required_headers": ["X-MSP-Token", "X-MSP-Host", "X-MSP-Tenant-Id"],
+                    "required_headers": ["X-API-Key", "X-MSP-Host", "X-MSP-Tenant-Id"],
                     "optional_headers": [],
                 },
                 status_code=401,
