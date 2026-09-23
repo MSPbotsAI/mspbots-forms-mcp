@@ -73,10 +73,15 @@ class FormsAPIError(Exception):
 class FormsAPIClient:
     """Async httpx client wrapping the MSPbots Forms API.
 
-    Auth: a platform JWT forwarded as "Authorization: Bearer <token>", PLUS
-    a tenant ID sent as the "X_Tenant_ID" cookie. The API contract claimed
-    tenant isolation is derived server-side from the JWT alone ("tenantId 从
-    token 取，永不从请求参数取"), but live testing against agent.mspbots.ai
+    Auth: the platform-issued API key, passed through verbatim as
+    "X-API-Key" (PRD-19165 — it replaced a platform JWT, which expired on
+    its own and so could not survive being stored as a tenant credential),
+    PLUS a tenant ID sent as the "X_Tenant_ID" **cookie**. Note the cookie:
+    this is the one service in the fleet where the tenant does not travel as
+    a header, and it is load-bearing — see below. The API contract claimed
+    tenant isolation is derived server-side from the credential alone
+    ("tenantId 从 token 取，永不从请求参数取"), but live testing against
+    agent.mspbots.ai
     (2026-08-07) proved that's only true once the request reaches the
     business logic — the APISIX app-routing gateway in front of it 404s
     ("App not found") without the X_Tenant_ID cookie, regardless of what's
@@ -97,7 +102,7 @@ class FormsAPIClient:
 
     def _headers(self) -> dict[str, str]:
         return {
-            "Authorization": f"Bearer {self._token}",
+            "X-API-Key": self._token,
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
