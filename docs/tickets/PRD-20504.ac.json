@@ -1,0 +1,75 @@
+[
+  {
+    "id": "TC1",
+    "ac": "AC1",
+    "text": "Given a form with records across multiple statuses, When an agent calls mspbots_forms_record_list(form_id, status='completed', limit=1), Then only completed records for that form are returned and a nextCursor is present so a second page can be fetched",
+    "type": "auto",
+    "tests": ["tests/test_records.py::test_record_list_filters_by_status_and_paginates"]
+  },
+  {
+    "id": "TC2",
+    "ac": "AC1",
+    "text": "Given two different forms each with records, When an agent calls mspbots_forms_record_list(form_id=A), Then no record belonging to form B appears in the result",
+    "type": "auto",
+    "tests": ["tests/test_records.py::test_record_list_is_scoped_to_its_own_form"]
+  },
+  {
+    "id": "TC3",
+    "ac": "AC2",
+    "text": "Given a known record_id, When an agent calls mspbots_forms_record_get(form_id, record_id), Then the full structured field data for that record is returned; given an unknown record_id, Then a not_found error envelope is returned instead of a raw exception",
+    "type": "auto",
+    "tests": ["tests/test_records.py::test_record_get_returns_fields_or_not_found"]
+  },
+  {
+    "id": "TC4",
+    "ac": "AC2",
+    "text": "Given a published form, When an agent creates a record, then updates one field on it, then deletes it (with confirm=true), Then each step succeeds and a subsequent record_list no longer shows the deleted record",
+    "type": "auto",
+    "tests": ["tests/test_records.py::test_record_create_update_delete_lifecycle"]
+  },
+  {
+    "id": "TC5",
+    "ac": "AC2",
+    "text": "Given an existing record, When an agent calls mspbots_forms_record_delete without confirm=true, Then the call is rejected client-side with invalid_argument and no delete request reaches the Forms API",
+    "type": "auto",
+    "tests": ["tests/test_records.py::test_record_delete_requires_confirm_true"]
+  },
+  {
+    "id": "TC6",
+    "ac": "AC3",
+    "text": "Given a successful record_create or record_get call, When the result is parsed as JSON, Then it contains explicit form_id and record_id fields (not just nested anonymously inside 'fields')",
+    "type": "auto",
+    "tests": ["tests/test_records.py::test_record_response_exposes_form_id_and_record_id"]
+  },
+  {
+    "id": "TC7",
+    "ac": "AC4",
+    "text": "Given a form whose question definition marks a field required/choices-restricted, When an agent calls record_create/record_update with a missing required field or an out-of-choices value, Then the call returns invalid_argument (422 mapped) and a subsequent record_list shows no partially-written record",
+    "type": "auto",
+    "tests": ["tests/test_records.py::test_record_write_rejects_values_violating_form_definition"]
+  },
+  {
+    "id": "TC8",
+    "ac": "AC4",
+    "text": "Given a record_id that belongs to tenant B, When an agent authenticated as tenant A calls record_get/record_list/record_update/record_delete with that id, Then the call returns not_found or unauthorized and the response body does not reveal the record's existence or content",
+    "type": "auto",
+    "tests": ["tests/test_records.py::test_record_tools_do_not_leak_across_tenants"]
+  },
+  {
+    "id": "TC9",
+    "ac": "AC5",
+    "text": "Given the Ginko organization-mapping use case (a form with fields for NinjaOne/Huntress/IT Glue/HaloPSA/ConnectWise identifiers), When an agent runs the full record lifecycle (create one mapping record, update one system ID on it, list to confirm the change, delete it) using only the new record tools, Then every step succeeds without falling back to the Forms UI",
+    "type": "manual",
+    "steps": [
+      "Stand up the backend's new record endpoints (dependency, see Tech design Risks & dependencies) against the INT environment, never PROD",
+      "Create a disposable test form in INT with fields matching the Ginko mapping use case (NinjaOne/Huntress/IT Glue/HaloPSA/ConnectWise org ids)",
+      "Call mspbots_forms_record_create with a full set of mapping values",
+      "Call mspbots_forms_record_update changing only the HaloPSA client id",
+      "Call mspbots_forms_record_list and confirm the record shows the updated value and the other fields unchanged",
+      "Call mspbots_forms_record_delete with confirm=true and confirm a subsequent record_get returns not_found"
+    ],
+    "expect": "All five calls succeed in order; the final record_get returns not_found; no step required opening the Forms UI",
+    "result": "untested",
+    "evidence": ""
+  }
+]
