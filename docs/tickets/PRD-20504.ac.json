@@ -71,5 +71,56 @@
     "expect": "All five calls succeed in order; the final record_get returns not_found; no step required opening the Forms UI",
     "result": "untested",
     "evidence": ""
+  },
+  {
+    "id": "TC10",
+    "ac": "AC6",
+    "text": "Given a form with N completed records, When an agent calls mspbots_forms_record_lookup(form_id, limit=50) and follows nextCursor across every page, Then every completed record is returned exactly once in stable order and the final total equals N",
+    "type": "auto",
+    "tests": ["tests/test_records.py::test_record_lookup_paginates_exactly_once_each"]
+  },
+  {
+    "id": "TC11",
+    "ac": "AC6",
+    "text": "Given filter=[{field:'status',op:'eq',value:'Active'}] and fields=['client_name','rewst_org_id'], When an agent calls mspbots_forms_record_lookup, Then only Active records are returned, each containing only the projected fields plus the _-prefixed system fields, and total reflects the filter",
+    "type": "auto",
+    "tests": ["tests/test_records.py::test_record_lookup_filters_and_projects_fields"]
+  },
+  {
+    "id": "TC12",
+    "ac": "AC6",
+    "text": "Given search='stroud' and searchFields=['client_name'], When an agent calls mspbots_forms_record_lookup, Then only records whose client_name case-insensitively contains 'stroud' are returned",
+    "type": "auto",
+    "tests": ["tests/test_records.py::test_record_lookup_search_is_case_insensitive_substring"]
+  },
+  {
+    "id": "TC13",
+    "ac": "AC7",
+    "text": "Given a normal mspbots_forms_record_lookup call, When the tool's declared outputSchema is used to validate the returned structuredContent, Then it always validates",
+    "type": "auto",
+    "tests": ["tests/test_records.py::test_record_lookup_structured_content_matches_output_schema"]
+  },
+  {
+    "id": "TC14",
+    "ac": "AC7",
+    "text": "Given an unknown form_id, or an unknown field name inside fields/filter/sort, When an agent calls mspbots_forms_record_lookup, Then a structured error (code+message) is returned, never a silently-empty list; given a record_id/form_id combination belonging to another tenant, Then the call returns not_found/unauthorized without leaking existence or content",
+    "type": "auto",
+    "tests": ["tests/test_records.py::test_record_lookup_rejects_unknown_inputs_and_isolates_tenants"]
+  },
+  {
+    "id": "TC15",
+    "ac": "AC7",
+    "text": "Given a Forms dropdown question configured with choicesSource pointed at mspbots_forms_record_lookup, When the dropdown is opened in a real form, Then it loads options and cascades auto-fill from the selected record with no adapter code on the consumer side",
+    "type": "manual",
+    "steps": [
+      "Confirm the backend list endpoint (dependency shared with TC9) exists in the target environment",
+      "Confirm with the Forms team whether choicesSource.type='mcp' dropdown wiring already exists in that environment (unverified by this design, see Open questions)",
+      "If both exist: configure a dropdown question's choicesSource to call mspbots_forms_record_lookup against the Ginko mapping form",
+      "Open the form and the dropdown in a browser; select an option",
+      "Confirm the dropdown lists the expected records and any configured downstream fields auto-fill from the selected record"
+    ],
+    "expect": "Dropdown loads the lookup tool's records as options and cascades auto-fill without any adapter/glue code",
+    "result": "untested",
+    "evidence": ""
   }
 ]
