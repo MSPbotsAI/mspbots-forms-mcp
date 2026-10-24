@@ -4,28 +4,36 @@
     "ac": "AC1",
     "text": "Given a mocked form definition with a client_org dropdown question whose choices each carry tenantId/haloClientId/rewstOrgId, When mspbots_forms_form_get(form_id, field_id=\"client_org\") is called, Then the returned JSON's choices array has every choice with all three properties present and no truncated flag set.",
     "type": "auto",
-    "tests": ["tests/test_tools.py::test_form_get_field_id_returns_full_choice_metadata"]
+    "tests": ["tests/test_tools.py::test_form_get_field_id_returns_full_choice_metadata"],
+    "result": "pass",
+    "evidence": "uv run pytest tests/test_tools.py::test_form_get_field_id_returns_full_choice_metadata -v -> 1 passed in 1.03s. Test asserts response choices all carry tenantId/haloClientId/rewstOrgId, no truncated key, and that include=definition was forced upstream even though the caller passed no include."
   },
   {
     "id": "TC2",
     "ac": "AC2",
     "text": "Given a mocked question whose choices list alone would serialize past the 20,000-char budget, When the same filtered call is made, Then the response is valid JSON with truncated: true, an original_count, and every choice present in the truncated list has all of its own properties intact.",
     "type": "auto",
-    "tests": ["tests/test_tools.py::test_form_get_field_id_truncates_oversized_choices_gracefully"]
+    "tests": ["tests/test_tools.py::test_form_get_field_id_truncates_oversized_choices_gracefully"],
+    "result": "pass",
+    "evidence": "uv run pytest tests/test_tools.py::test_form_get_field_id_truncates_oversized_choices_gracefully -v -> 1 passed in 1.03s. Test uses 300 synthetic choices (comfortably over the 20,000-char cap) and asserts truncated=true, original_count=300, 0 < len(choices) < 300, every surviving choice still has all 3 properties, and the serialized payload is <= 20,000 chars."
   },
   {
     "id": "TC3",
     "ac": "AC3",
     "text": "Given a field_id that matches no question in the mocked definition, When the filtered call is made, Then the response is an error envelope with code not_found naming the requested field_id and form_id.",
     "type": "auto",
-    "tests": ["tests/test_tools.py::test_form_get_field_id_not_found_returns_structured_error"]
+    "tests": ["tests/test_tools.py::test_form_get_field_id_not_found_returns_structured_error"],
+    "result": "pass",
+    "evidence": "uv run pytest tests/test_tools.py::test_form_get_field_id_not_found_returns_structured_error -v -> 1 passed in 1.03s. Test asserts error.code == \"not_found\", error.retryable == false, and the message names both the requested field_id and form_id."
   },
   {
     "id": "TC4",
     "ac": "AC4",
     "text": "Given the exact same mocked backend response used by this repo's existing mspbots_forms_form_get tests, When the tool is called with no field_id, Then the output is unchanged from before this change.",
     "type": "auto",
-    "tests": ["tests/test_tools.py::test_form_get_without_field_id_is_unchanged"]
+    "tests": ["tests/test_tools.py::test_form_get_without_field_id_is_unchanged"],
+    "result": "pass",
+    "evidence": "uv run pytest tests/test_tools.py::test_form_get_without_field_id_is_unchanged -v -> 1 passed in 1.03s. Test asserts the decoded payload equals the mocked backend response byte-for-byte and that the include param reaching the backend is exactly what the caller passed (\"versions\"), confirming field_id never forces include=definition when omitted."
   },
   {
     "id": "TC5",
@@ -39,13 +47,15 @@
     ],
     "expect": "Every client_org choice object includes non-empty tenantId, haloClientId, and rewstOrgId values matching the known mapping for that tenant; no truncated flag unless the real choice count genuinely exceeds the budget (in which case AC2's graceful-truncation behavior applies, not data loss)",
     "result": "untested",
-    "evidence": ""
+    "evidence": "Not executed: this sandbox has no network path to a live PROD/INT MCP deployment or real tenant credentials (consistent with this pipeline's standing constraint that dev-leg sandboxes cannot reach live backend services). Recorded as a local blind spot, not a pass -- requires an operator with PROD/INT access to run post-ship, per the design doc's own Test strategy section."
   },
   {
     "id": "TC6",
     "ac": "AC6",
     "text": "Given the new field_id code path, a code-level test confirms find_question_by_name is a pure function with no shared mutable state, and that the field_id branch uses the same per-request client_factory()/FormsAPIClient as every other branch.",
     "type": "auto",
-    "tests": ["tests/test_tools.py::test_form_get_field_id_path_introduces_no_shared_state"]
+    "tests": ["tests/test_tools.py::test_form_get_field_id_path_introduces_no_shared_state"],
+    "result": "pass",
+    "evidence": "uv run pytest tests/test_tools.py::test_form_get_field_id_path_introduces_no_shared_state -v -> 1 passed in 1.03s. Test (a) inspects _survey_walk module globals to confirm no mutable module-level state, (b) calls find_question_by_name twice with different definitions and confirms no cross-call leakage, and (c) drives two different tenants through the same field_id branch via the real per-request client_factory/contextvar path and confirms tenant-A's form data never leaks into tenant-B's response."
   }
 ]
