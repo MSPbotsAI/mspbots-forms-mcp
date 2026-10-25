@@ -80,7 +80,7 @@ class FormsAPIClient:
     this is the one service in the fleet where the tenant does not travel as
     a header, and it is load-bearing — see below. The API contract claimed
     tenant isolation is derived server-side from the credential alone
-    ("tenantId 从 token 取，永不从请求参数取"), but live testing against
+    ("tenantId comes from the token, never from request parameters"), but live testing against
     agent.mspbots.ai
     (2026-08-07) proved that's only true once the request reaches the
     business logic — the APISIX app-routing gateway in front of it 404s

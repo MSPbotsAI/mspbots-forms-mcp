@@ -37,8 +37,8 @@ EXPECTED_TOOLS = {
 # explanation (question `kind` values, showIf semantics) to let an agent
 # construct valid nested arguments — an earlier blind usability test found
 # that explanation was the most valuable part of these docstrings. They are
-# intentionally exempt from the <=500 char budget (SOP §2.2 is "应当", not
-# "必须") rather than gutted to fit.
+# intentionally exempt from the <=500 char budget (SOP §2.2 is "should", not
+# "must") rather than gutted to fit.
 _DESCRIPTION_LENGTH_EXEMPT = {"mspbots_forms_form_create", "mspbots_forms_form_update"}
 
 
