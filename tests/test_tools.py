@@ -2,16 +2,21 @@
 
 No network calls: tool enumeration goes through FastMCP's in-process
 list_tools(), and the error-code mapping is tested directly against
-FormsAPIError, independent of any real HTTP request.
+FormsAPIError, independent of any real HTTP request. The
+mspbots_forms_form_get(field_id=...) tests below (PRD-21379) also avoid
+real HTTP by monkeypatching FormsAPIClient.get and driving the tool
+in-process via mcp.call_tool(), with per-request credentials supplied
+through the same _gateway_creds_var contextvar test_middleware.py uses.
 """
 
 import json
 
 import pytest
 
-from mspbots_forms_mcp.api_client import FormsAPIError
+from mspbots_forms_mcp.api_client import FormsAPIClient, FormsAPIError
 from mspbots_forms_mcp.config import Settings
-from mspbots_forms_mcp.server import create_mcp_server
+from mspbots_forms_mcp.server import create_mcp_server, _gateway_creds_var
+from mspbots_forms_mcp.tools._survey_walk import find_question_by_name
 
 # required params + annotation hints expected for each of the 14 tools.
 # Tool names carry the mspbots_forms_ prefix added in a prior rename pass —
@@ -109,3 +114,197 @@ def test_error_envelope_without_domain_code():
     envelope = json.loads(err.to_envelope())
     assert envelope["error"]["code"] == "not_found"
     assert envelope["error"]["message"] == "not there"
+
+
+# ---------------------------------------------------------------------------
+# PRD-21379: mspbots_forms_form_get(field_id=...) — single-question filter
+# that returns full choice metadata (tenantId/haloClientId/rewstOrgId)
+# without the whole-form response's size cap dropping it.
+# ---------------------------------------------------------------------------
+
+
+def _client_org_definition(num_choices: int = 1, pad: str = "") -> dict:
+    """A minimal SurveyJS definition with one dropdown question, client_org,
+    nested one level inside a "panel" element (exercises the recursive walk)."""
+    choices = [
+        {
+            "value": f"choice_{i:04d}",
+            "text": f"Choice label {i:04d}{pad}",
+            "tenantId": f"tenant-{i:04d}",
+            "haloClientId": f"halo-{i:04d}",
+            "rewstOrgId": f"rewst-{i:04d}",
+        }
+        for i in range(num_choices)
+    ]
+    return {
+        "pages": [
+            {
+                "elements": [
+                    {
+                        "type": "panel",
+                        "name": "org_panel",
+                        "elements": [
+                            {
+                                "type": "dropdown",
+                                "name": "client_org",
+                                "title": "Client Organization",
+                                "choices": choices,
+                            }
+                        ],
+                    }
+                ]
+            }
+        ]
+    }
+
+
+async def _call_form_get(monkeypatch, fake_get, arguments, tenant_id="tenant-abc"):
+    """Drive mspbots_forms_form_get through the real FastMCP dispatch path
+    (not by calling the undecorated function), with FormsAPIClient.get
+    monkeypatched so no real HTTP is made. Returns the decoded JSON payload.
+    """
+    monkeypatch.setattr(FormsAPIClient, "get", fake_get)
+    mcp = create_mcp_server(Settings())
+    token = _gateway_creds_var.set(("tok", "https://agent.mspbots.ai", tenant_id))
+    try:
+        _, structured = await mcp.call_tool("mspbots_forms_form_get", arguments)
+    finally:
+        _gateway_creds_var.reset(token)
+    return json.loads(structured["result"])
+
+
+@pytest.mark.asyncio
+async def test_form_get_field_id_returns_full_choice_metadata(monkeypatch):
+    """TC1 / AC1."""
+    captured_params = {}
+
+    async def fake_get(self, path, params=None):
+        captured_params.update(params or {})
+        return {"id": "f7528a78", "definition": _client_org_definition(num_choices=3)}
+
+    payload = await _call_form_get(
+        monkeypatch, fake_get, {"form_id": "f7528a78", "field_id": "client_org"}
+    )
+
+    assert payload["name"] == "client_org"
+    assert payload["form_id"] == "f7528a78"
+    assert payload["field_id"] == "client_org"
+    assert len(payload["choices"]) == 3
+    for choice in payload["choices"]:
+        assert choice["tenantId"] and choice["haloClientId"] and choice["rewstOrgId"]
+    assert payload.get("truncated") is None
+    # field_id must force a definition fetch even though the caller passed no include.
+    assert captured_params["include"] == "definition"
+
+
+@pytest.mark.asyncio
+async def test_form_get_field_id_truncates_oversized_choices_gracefully(monkeypatch):
+    """TC2 / AC2: a question whose own choices list alone exceeds the
+    20,000-char budget must still come back as valid JSON with every
+    surviving choice's properties intact, not silently discarded."""
+
+    async def fake_get(self, path, params=None):
+        # ~150 bytes/choice * 300 choices comfortably exceeds MAX_CHARS (20_000).
+        return {
+            "id": "f7528a78",
+            "definition": _client_org_definition(num_choices=300, pad=" padding text"),
+        }
+
+    payload = await _call_form_get(
+        monkeypatch, fake_get, {"form_id": "f7528a78", "field_id": "client_org"}
+    )
+
+    assert payload["truncated"] is True
+    assert payload["original_count"] == 300
+    assert payload["truncated_field"] == "choices"
+    assert 0 < len(payload["choices"]) < 300
+    for choice in payload["choices"]:
+        assert choice["tenantId"] and choice["haloClientId"] and choice["rewstOrgId"]
+    assert len(json.dumps(payload, separators=(",", ":"))) <= 20_000
+
+
+@pytest.mark.asyncio
+async def test_form_get_field_id_not_found_returns_structured_error(monkeypatch):
+    """TC3 / AC3."""
+
+    async def fake_get(self, path, params=None):
+        return {"id": "f7528a78", "definition": _client_org_definition()}
+
+    payload = await _call_form_get(
+        monkeypatch, fake_get, {"form_id": "f7528a78", "field_id": "no_such_question"}
+    )
+
+    assert payload["error"]["code"] == "not_found"
+    assert "no_such_question" in payload["error"]["message"]
+    assert "f7528a78" in payload["error"]["message"]
+    assert payload["error"]["retryable"] is False
+
+
+@pytest.mark.asyncio
+async def test_form_get_without_field_id_is_unchanged(monkeypatch):
+    """TC4 / AC4: existing callers that never pass field_id must see
+    byte-identical behavior — same params sent upstream, same shape back."""
+    mock_response = {"id": "f7528a78", "title": "Offboarding", "status": "published"}
+    captured_params = {}
+
+    async def fake_get(self, path, params=None):
+        captured_params.update(params or {})
+        return mock_response
+
+    payload = await _call_form_get(
+        monkeypatch, fake_get, {"form_id": "f7528a78", "include": ["versions"]}
+    )
+
+    assert payload == mock_response
+    # No field_id given -> include is passed through exactly as the caller
+    # gave it; "definition" is never force-added.
+    assert captured_params["include"] == "versions"
+
+
+@pytest.mark.asyncio
+async def test_form_get_field_id_path_introduces_no_shared_state(monkeypatch):
+    """TC6 / AC6: find_question_by_name is a pure function (no module-level
+    or shared mutable state), and the field_id branch resolves its client
+    the same per-request way as every other branch — two different tenants'
+    concurrent-style calls never see each other's data."""
+    import inspect
+
+    from mspbots_forms_mcp.tools import _survey_walk
+
+    # Pure-function check: no module-level mutable (non-callable, non-type)
+    # globals that calls could accumulate state into.
+    for attr_name, value in vars(_survey_walk).items():
+        if attr_name.startswith("__"):
+            continue
+        assert inspect.isfunction(value) or inspect.ismodule(value) or isinstance(
+            value, type
+        ), f"unexpected module-level state: {attr_name}={value!r}"
+
+    # Calling it twice with different inputs must not leak between calls.
+    def_a = _client_org_definition(num_choices=1)
+    def_b = {"pages": [{"elements": [{"type": "text", "name": "other_question"}]}]}
+    first = find_question_by_name(def_a, "client_org")
+    second = find_question_by_name(def_b, "client_org")
+    assert first is not None and first["name"] == "client_org"
+    assert second is None
+    # Re-running the first lookup gives the same result — no mutation occurred.
+    assert find_question_by_name(def_a, "client_org") == first
+
+    # Per-request isolation: two different tenants, each with their own
+    # definition, routed through the same field_id code path.
+    async def fake_get(self, path, params=None):
+        tenant = self._cookies()["X_Tenant_ID"]
+        forms = {
+            "tenant-A": _client_org_definition(num_choices=1),
+            "tenant-B": {"pages": [{"elements": [{"type": "text", "name": "unrelated"}]}]},
+        }
+        return {"id": "f1", "definition": forms[tenant]}
+
+    payload_a = await _call_form_get(
+        monkeypatch, fake_get, {"form_id": "f1", "field_id": "client_org"}, tenant_id="tenant-A"
+    )
+    payload_b = await _call_form_get(
+        monkeypatch, fake_get, {"form_id": "f1", "field_id": "client_org"}, tenant_id="tenant-B"
+    )
+    assert payload_a["name"] == "client_org"
+    assert payload_b["error"]["code"] == "not_found"
