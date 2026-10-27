@@ -38,16 +38,27 @@
   {
     "id": "TC5",
     "ac": "AC5",
-    "text": "Given the real offboarding form f7528a78 v4 in the MSPbots demo tenant, When an operator with PROD/INT MCP access calls the shipped mspbots_forms_form_get(form_id=\"f7528a78\", field_id=\"client_org\"), Then every real client_org option in the response retains its real tenantId, haloClientId, and rewstOrgId values.",
+    "text": "[r2-amended] Given the real offboarding form f7528a78 v4 in the MSPbots demo tenant, When an operator with PROD/INT MCP access calls the shipped mspbots_forms_form_get(form_id=\"f7528a78\", field_id=\"client_org\"), Then the response contains all 185 real client_org options, and each option retains whichever of tenantId, haloClientId, and rewstOrgId are present for it in the source data (no requirement that every option carry a non-empty tenantId); the response is not collapsed to a truncation notice.",
     "type": "manual",
     "steps": [
       "Obtain PROD or INT MCP access with a valid API key + tenant for the MSPbots demo tenant",
       "Call mspbots_forms_form_get(form_id=\"f7528a78\", field_id=\"client_org\") against the shipped build",
-      "Inspect the response's choices array"
+      "Inspect the response's option list and count"
     ],
-    "expect": "Every client_org choice object includes non-empty tenantId, haloClientId, and rewstOrgId values matching the known mapping for that tenant; no truncated flag unless the real choice count genuinely exceeds the budget (in which case AC2's graceful-truncation behavior applies, not data loss)",
+    "expect": "All 185 client_org options are present in the response (not 0, not a truncation-notice collapse); each option carries whichever of tenantId/haloClientId/rewstOrgId exist for it in the source definition; options genuinely lacking an attribute in source data are not required to carry it; graceful truncation per AC2 applies only if the real payload still exceeds the size budget after the fix",
     "result": "untested",
-    "evidence": "Not executed: this sandbox has no network path to a live PROD/INT MCP deployment or real tenant credentials (consistent with this pipeline's standing constraint that dev-leg sandboxes cannot reach live backend services). Recorded as a local blind spot, not a pass -- requires an operator with PROD/INT access to run post-ship, per the design doc's own Test strategy section."
+    "evidence": "Not executed: this sandbox has no network path to a live PROD/INT MCP deployment or real tenant credentials. First run (round 1) found 0 of 185 options returned -- see TC7 for the regression test that reproduces the root cause locally without live access; AC5/TC5 itself still requires a live PROD/INT run once the dev leg's fix for TC7 ships.",
+    "rework_note": "AC5 wording amended in PRD-21379-r2.md: round-1 wording required every option to have a non-empty tenantId, which 37 of 185 real options cannot satisfy (confirmed by Tom Lan's live test, comment 90170266253375)."
+  },
+  {
+    "id": "TC7",
+    "ac": "AC7",
+    "text": "[r2-new, regression -- source: dev feedback comment 90170266253375] Given a mocked client_org question shaped like the real form f7528a78 (choicesSource: {items: [...185 entries, 37 of them missing tenantId...], passAttributes: [\"rewstOrgId\",\"haloClientId\",\"tenantId\"]}, not a top-level choices list), When mspbots_forms_form_get(form_id, field_id=\"client_org\") is called, Then the response is valid JSON containing all (or, if still oversized, gracefully truncated per AC2) options with their present attributes, and the response is never the generic \"Result too large ... not list-shaped\" notice.",
+    "type": "auto",
+    "tests": ["tests/test_tools.py::test_form_get_field_id_handles_choices_source_shape"],
+    "result": "",
+    "evidence": "Not yet implemented/run -- this is a new regression test case written by the design leg (rework r2), with a planned test name for the dev leg to implement; the dev leg fills result/evidence here once the test is written and passing.",
+    "source": "dev feedback: comment 90170266253375 (Tom Lan, [TEST · PRD-21379] FAIL, 2026-10-25) -- root cause: the real client_org question stores options under choicesSource (a dict with a nested items list) rather than a top-level choices list, so dump_json_capped's top-level-list scan (_json.py:28-30) finds no list field and collapses the entire payload to a 116-char truncation notice, discarding all 185 options. See PRD-21379-r2.md Rework triage for the full trace."
   },
   {
     "id": "TC6",
