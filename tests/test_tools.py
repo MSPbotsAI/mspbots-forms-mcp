@@ -36,6 +36,8 @@ EXPECTED_TOOLS = {
     "mspbots_forms_share_delete": ({"share_id", "confirm"}, {"destructiveHint": True}),
     "mspbots_forms_response_summary": ({"form_id"}, {"readOnlyHint": True}),
     "mspbots_forms_response_list": ({"form_id"}, {"readOnlyHint": True}),
+    "mspbots_forms_form_export": ({"form_id"}, {}),
+    "mspbots_forms_form_import": ({"export_payload"}, {}),
 }
 
 # mspbots_forms_form_create/_update genuinely need their long DSL
@@ -53,7 +55,7 @@ async def test_tools_list_snapshot():
     tools = await mcp.list_tools()
     names = {t.name for t in tools}
     assert names == set(EXPECTED_TOOLS), f"unexpected tool set: {names}"
-    assert len(tools) == 14
+    assert len(tools) == 16
 
     by_name = {t.name: t for t in tools}
     for name, (expected_required, expected_annotations) in EXPECTED_TOOLS.items():

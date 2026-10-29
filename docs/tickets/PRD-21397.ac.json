@@ -1,0 +1,107 @@
+[
+  {
+    "id": "TC1",
+    "ac": "AC1",
+    "text": "Given a definition with ordinary fields across two pages and no data-source/tenant-scoped choices, When exported then imported, Then the imported definition equals the source definition except for the (new) form ID.",
+    "type": "auto",
+    "tests": ["tests/test_transfer.py::test_export_then_import_roundtrip_is_field_for_field_identical"]
+  },
+  {
+    "id": "TC2",
+    "ac": "AC2",
+    "text": "Given a real form with \"requires Microsoft 365 sign-in\" enabled plus non-default progress-bar/thank-you-message settings, When exported then imported on INT, Then all three settings match on the imported form.",
+    "type": "manual",
+    "steps": [
+      "On INT, open or create a form with \"requires Microsoft 365 sign-in\" enabled, show-progress-bar on, and a custom thank-you message",
+      "Call mspbots_forms_form_export(form_id) against that tenant",
+      "Switch to a second INT tenant and call mspbots_forms_form_import(export_payload) with the resulting JSON",
+      "Call mspbots_forms_form_get on the new form_id with include=[\"definition\"] and compare the three settings"
+    ],
+    "expect": "The imported form's \"requires Microsoft 365 sign-in\", progress-bar, and thank-you-message settings are identical to the source form's",
+    "result": "untested",
+    "notes": "needs a real multi-tenant INT form; cannot be reproduced as a pure-function unit test since this server has no local database"
+  },
+  {
+    "id": "TC3",
+    "ac": "AC3",
+    "text": "Given a real form with at least one submitted response, When imported, Then the imported form has 0 responses.",
+    "type": "manual",
+    "steps": [
+      "On INT, use a source form that has at least one submitted response",
+      "Export then import it into a second tenant as in TC2",
+      "Call mspbots_forms_response_summary (or response_list) on the new form_id"
+    ],
+    "expect": "0 responses on the imported form, regardless of how many the source form had",
+    "result": "untested",
+    "notes": "needs a real INT form with existing responses"
+  },
+  {
+    "id": "TC4",
+    "ac": "AC4",
+    "text": "Given a definition with one question using choicesByUrl, When strip_tenant_specific runs, Then that question has no choicesByUrl and no choices, and the report lists it with reason \"data-source-bound\".",
+    "type": "auto",
+    "tests": ["tests/test_transfer.py::test_choices_by_url_field_is_stripped_and_reported"]
+  },
+  {
+    "id": "TC5",
+    "ac": "AC5",
+    "text": "Given a definition with a client_org-style question whose static choices are objects carrying tenantId/haloClientId/rewstOrgId, When strip_tenant_specific runs, Then choices is cleared and the report lists the question with the matched key names.",
+    "type": "auto",
+    "tests": ["tests/test_transfer.py::test_tenant_scoped_static_choices_are_stripped_and_reported"]
+  },
+  {
+    "id": "TC6",
+    "ac": "AC5",
+    "text": "Given a definition with an ordinary question whose static choices are plain strings (no tenant-shaped keys), When strip_tenant_specific runs, Then the question is returned unchanged and does not appear in the report.",
+    "type": "auto",
+    "tests": ["tests/test_transfer.py::test_ordinary_static_choices_are_not_over_stripped"]
+  },
+  {
+    "id": "TC7",
+    "ac": "AC6",
+    "text": "Given an export payload with export_version 2 (or missing), When mspbots_forms_form_import is called, Then it returns an invalid_argument error naming the unsupported version and client.post/client.patch are never invoked.",
+    "type": "auto",
+    "tests": [
+      "tests/test_transfer.py::test_import_refuses_unsupported_export_version",
+      "tests/test_transfer.py::test_import_refuses_missing_export_version",
+      "tests/test_transfer.py::test_import_refuses_unsupported_version_without_any_write_call"
+    ]
+  },
+  {
+    "id": "TC8",
+    "ac": "AC7",
+    "text": "Given a successful import, Then the returned object contains form_id and a report key (empty list when nothing was flagged).",
+    "type": "auto",
+    "tests": ["tests/test_transfer.py::test_import_returns_form_id_and_report"]
+  },
+  {
+    "id": "TC9",
+    "ac": "AC8",
+    "text": "Given strip_tenant_specific runs on a definition built under a simulated tenant-A fixture carrying known tenant-A-only identifiers, When the result is asserted against, Then none of those identifiers survive un-flagged in the output.",
+    "type": "auto",
+    "tests": ["tests/test_transfer.py::test_tenant_a_identifiers_do_not_survive_unflagged"]
+  },
+  {
+    "id": "TC10",
+    "ac": "AC1",
+    "text": "tests/test_tools.py::test_tools_list_snapshot passes with 16 tools including the two new ones and their expected required-params/annotations.",
+    "type": "auto",
+    "tests": ["tests/test_tools.py::test_tools_list_snapshot"]
+  },
+  {
+    "id": "TC11",
+    "ac": "AC5",
+    "source": "dev",
+    "text": "Given a definition with a client_org-style question whose static choices live under choicesSource.items (items carrying tenantId/haloClientId/rewstOrgId nested inside an \"attrs\" dict) instead of a top-level choices list -- the real shape confirmed live on sibling ticket PRD-21379 -- When strip_tenant_specific runs, Then choicesSource is dropped, choices is cleared, and the report lists the question with the matched key names.",
+    "type": "auto",
+    "tests": ["tests/test_transfer.py::test_choices_source_shaped_tenant_scoped_choices_are_stripped_and_reported"]
+  },
+  {
+    "id": "TC12",
+    "ac": "AC2",
+    "source": "dev",
+    "text": "Given the exported form record carries a status field (and an owner/sharing-shaped field), When imported, Then neither reaches the PATCH body, while an ordinary sibling setting (e.g. showProgressBar) still does.",
+    "type": "auto",
+    "tests": ["tests/test_transfer.py::test_import_excludes_status_and_sharing_shaped_keys_from_patch_body"]
+  }
+]
