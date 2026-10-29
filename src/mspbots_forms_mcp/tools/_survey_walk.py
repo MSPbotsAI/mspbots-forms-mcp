@@ -43,3 +43,41 @@ def _search_elements(elements: Any, name: str) -> dict[str, Any] | None:
             if found is not None:
                 return found
     return None
+
+
+def normalize_choice_source(question: dict[str, Any]) -> dict[str, Any]:
+    """Promote a "choicesSource" static-choice-source dict's nested "items"
+    list to a top-level "choices" key (PRD-21379 rework r2, AC7).
+
+    A SurveyJS question carries its options one of two ways: a flat
+    top-level "choices" list (what PRD-21379 round 1 assumed, and what the
+    round-1 test mocks use), or a "choicesSource" reference --
+    {"items": [...], "passAttributes": [...]} -- which is what the real
+    client_org question on form f7528a78 actually uses. `_json.dump_json_capped`
+    only scans a dict's own top-level keys for a list value to truncate
+    (`_json.py:28-30`); a "choicesSource" dict is invisible to that scan, so
+    without this normalization an oversized choicesSource-shaped question
+    falls into the generic "not list-shaped" branch and the entire payload
+    -- every option -- is discarded instead of gracefully truncated.
+
+    Only one of the two shapes is expected on a given question. If a
+    top-level "choices" list is already present, `question` is returned
+    unchanged (round-1 behavior, AC1/AC2/AC4 untouched). If neither shape is
+    present (e.g. a non-choice question type), `question` is also returned
+    unchanged.
+    """
+    if isinstance(question.get("choices"), list):
+        return question
+    choices_source = question.get("choicesSource")
+    if not isinstance(choices_source, dict):
+        return question
+    items = choices_source.get("items")
+    if not isinstance(items, list):
+        return question
+    normalized = dict(question)
+    del normalized["choicesSource"]
+    normalized["choices"] = items
+    pass_attributes = choices_source.get("passAttributes")
+    if pass_attributes is not None:
+        normalized["choicesSourcePassAttributes"] = pass_attributes
+    return normalized

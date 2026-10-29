@@ -223,6 +223,106 @@ async def test_form_get_field_id_truncates_oversized_choices_gracefully(monkeypa
     assert len(json.dumps(payload, separators=(",", ":"))) <= 20_000
 
 
+def _client_org_choices_source_definition(num_items: int = 185, num_missing_tenant: int = 37) -> dict:
+    """A SurveyJS definition whose client_org question carries its options
+    via a "choicesSource" static-choice-source dict (a nested "items" list)
+    instead of a top-level "choices" list -- the shape the real client_org
+    question on form f7528a78 actually uses (PRD-21379 rework r2, dev
+    feedback comment 90170266253375), as opposed to the flat "choices" list
+    _client_org_definition() above mocks (which round 1's tests never
+    caught not matching reality).
+
+    The first `num_missing_tenant` items omit "tenantId" from their attrs,
+    mirroring the real form where 37 of 185 options genuinely have no
+    tenantId in the source data (r2-amended AC5/TC5).
+    """
+    items = []
+    for i in range(num_items):
+        attrs = {"haloClientId": f"halo-{i:04d}", "rewstOrgId": f"rewst-{i:04d}"}
+        if i >= num_missing_tenant:
+            attrs["tenantId"] = f"tenant-{i:04d}"
+        items.append({"value": f"choice_{i:04d}", "text": f"Choice label {i:04d}", "attrs": attrs})
+    return {
+        "pages": [
+            {
+                "elements": [
+                    {
+                        "type": "dropdown",
+                        "name": "client_org",
+                        "title": "Client Organization",
+                        "choicesSource": {
+                            "items": items,
+                            "passAttributes": ["rewstOrgId", "haloClientId", "tenantId"],
+                        },
+                    }
+                ]
+            }
+        ]
+    }
+
+
+@pytest.mark.asyncio
+async def test_form_get_field_id_handles_choices_source_shape(monkeypatch):
+    """TC7 / AC7 (rework r2 regression, source: dev feedback comment
+    90170266253375). The real client_org question on form f7528a78 stores
+    its 185 options under choicesSource.items, not a top-level choices
+    list -- round 1's fix fell into dump_json_capped's "not list-shaped"
+    branch for this shape and silently discarded all 185 options. This
+    must come back gracefully truncated (AC2), never as the generic
+    "Result too large ... not list-shaped" notice."""
+
+    async def fake_get(self, path, params=None):
+        return {
+            "id": "f7528a78",
+            "definition": _client_org_choices_source_definition(num_items=185, num_missing_tenant=37),
+        }
+
+    payload = await _call_form_get(
+        monkeypatch, fake_get, {"form_id": "f7528a78", "field_id": "client_org"}
+    )
+
+    assert "note" not in payload  # never the generic not-list-shaped collapse
+    assert "choices" in payload
+    # Real-size payload (185 items, ~51KB in production) exceeds the
+    # 20,000-char budget -- must be gracefully truncated, not emptied.
+    assert payload["truncated"] is True
+    assert payload["truncated_field"] == "choices"
+    assert payload["original_count"] == 185
+    assert 0 < len(payload["choices"]) < 185
+    for item in payload["choices"]:
+        assert item["attrs"]["haloClientId"] and item["attrs"]["rewstOrgId"]
+        # tenantId is only required when the source data actually had one --
+        # 37 of 185 genuinely don't (r2-amended AC5), and that's not a bug.
+        if "tenantId" in item["attrs"]:
+            assert item["attrs"]["tenantId"]
+    assert len(json.dumps(payload, separators=(",", ":"))) <= 20_000
+
+
+@pytest.mark.asyncio
+async def test_form_get_field_id_choices_source_small_form_is_not_truncated(monkeypatch):
+    """TC7 / AC7 complement: a choicesSource-shaped question small enough to
+    fit under budget must come back with every option present intact and no
+    truncated flag -- the choicesSource normalization itself is not lossy,
+    only the pre-existing size cap (AC2) can ever drop entries."""
+
+    async def fake_get(self, path, params=None):
+        return {
+            "id": "f1",
+            "definition": _client_org_choices_source_definition(num_items=3, num_missing_tenant=1),
+        }
+
+    payload = await _call_form_get(
+        monkeypatch, fake_get, {"form_id": "f1", "field_id": "client_org"}
+    )
+
+    assert payload.get("truncated") is None
+    assert len(payload["choices"]) == 3
+    assert "tenantId" not in payload["choices"][0]["attrs"]
+    assert payload["choices"][1]["attrs"]["tenantId"]
+    assert payload["choices"][2]["attrs"]["tenantId"]
+    assert payload["choicesSourcePassAttributes"] == ["rewstOrgId", "haloClientId", "tenantId"]
+
+
 @pytest.mark.asyncio
 async def test_form_get_field_id_not_found_returns_structured_error(monkeypatch):
     """TC3 / AC3."""

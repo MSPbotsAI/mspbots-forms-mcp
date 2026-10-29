@@ -21,7 +21,7 @@ from pydantic import Field
 from .._json import dump_json_capped, error_envelope
 from ..api_client import FormsAPIClient, FormsAPIError
 from ._common import NO_TOKEN
-from ._survey_walk import find_question_by_name
+from ._survey_walk import find_question_by_name, normalize_choice_source
 
 # Hard safety ceiling on top of the underlying API's own documented cap
 # (default 20, max 100) — we clamp to the tighter of the two (100).
@@ -117,6 +117,12 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
             return error_envelope(
                 "not_found", f"No question named {field_id!r} in form {form_id!r}", False
             )
+        # PRD-21379 rework r2 (AC7): a question's choices may live under a
+        # "choicesSource" dict ({"items": [...]}) instead of a top-level
+        # "choices" list — normalize so dump_json_capped's truncation (which
+        # only scans top-level list values) can see and cap the option list
+        # instead of discarding it entirely.
+        question = normalize_choice_source(question)
         return dump_json_capped({"form_id": form_id, "field_id": field_id, **question})
 
     @mcp.tool()
