@@ -21,6 +21,7 @@ from pydantic import Field
 from .._json import dump_json_capped, error_envelope
 from ..api_client import FormsAPIClient, FormsAPIError
 from ._common import NO_TOKEN
+from ._survey_walk import find_question_by_name, normalize_choice_source
 
 # Hard safety ceiling on top of the underlying API's own documented cap
 # (default 20, max 100) — we clamp to the tighter of the two (100).
@@ -70,21 +71,59 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
                 )
             ),
         ] = None,
+        field_id: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Optional — return only the question named field_id "
+                    '(SurveyJS "name", e.g. "client_org") with every choice '
+                    'fully intact (e.g. tenantId). "questions" mode never '
+                    "carries choice properties, and the whole-form response "
+                    "can be truncated before reaching them; this bypasses "
+                    "both. Forces an internal definition fetch."
+                )
+            ),
+        ] = None,
     ) -> str:
         """Get a form's details.
 
         By default only the base record is returned — no definition,
         questions, or versions — since the full definition can be several KB.
+
+        include=["questions"] never carries choice-level custom properties.
+        To read one question's full choice metadata without risking
+        truncation, pass field_id instead of include.
         """
         client = client_factory()
         if client is None:
             return NO_TOKEN
-        params = {"include": ",".join(include) if include else None}
+        include_list = list(include) if include else []
+        if field_id is not None and "definition" not in include_list:
+            include_list.append("definition")
+        params = {"include": ",".join(include_list) if include_list else None}
         try:
             result = await client.get(f"/surveys/{form_id}", params=params)
-            return dump_json_capped(result)
         except FormsAPIError as e:
             return e.to_envelope()
+        if field_id is None:
+            return dump_json_capped(result)
+        definition = result.get("definition") if isinstance(result, dict) else None
+        question = (
+            find_question_by_name(definition, field_id)
+            if isinstance(definition, dict)
+            else None
+        )
+        if question is None:
+            return error_envelope(
+                "not_found", f"No question named {field_id!r} in form {form_id!r}", False
+            )
+        # PRD-21379 rework r2 (AC7): a question's choices may live under a
+        # "choicesSource" dict ({"items": [...]}) instead of a top-level
+        # "choices" list — normalize so dump_json_capped's truncation (which
+        # only scans top-level list values) can see and cap the option list
+        # instead of discarding it entirely.
+        question = normalize_choice_source(question)
+        return dump_json_capped({"form_id": form_id, "field_id": field_id, **question})
 
     @mcp.tool()
     async def mspbots_forms_form_create(
