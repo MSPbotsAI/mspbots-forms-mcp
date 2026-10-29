@@ -1,5 +1,7 @@
 # PRD-21397 · Code review
 
+Status: frozen @ 6aeb094
+
 ## Round 1 · 2026-10-29 · reviewed dev/PRD-21397 @ 47b110b (base main @ 35c6ccf)
 
 Verdict: changes requested
@@ -75,3 +77,37 @@ Branch re-synced with the default branch first (round 2's own note: "whichever r
 | `gitleaks` | not installed in this environment (same gap noted in round 1); no credential-shaped strings touched by this round's diff |
 
 Outstanding (unchanged from rounds 1–2, not re-litigated): TC2/TC3 remain manual/untested — need a real multi-tenant INT form with "requires Microsoft 365 sign-in", a non-default progress bar, a thank-you message, and at least one response; not a code defect per `mcp-track.md` §3 completion standard.
+
+## Round 3 · 2026-10-29 · reviewed dev/PRD-21397 @ 6aeb094 (base main @ 0aa749b)
+
+Verdict: approved
+
+### Round-2 fixes re-checked
+
+1. **`choicesSource.items` detection (round-2 must-fix #1) — confirmed fixed and correctly tested.** `_transfer_sanitize._walk` (`src/mspbots_forms_mcp/tools/_transfer_sanitize.py:139-148`) now calls `_survey_walk.normalize_choice_source` to peek at `choicesSource.items` before the `TENANT_SCOPED_CHOICE_KEYS` check, and a new `_choice_keys()` helper checks both an item's own top-level keys and a nested `attrs` dict (the real client_org shape live-tested by sibling PRD-21379). On a match, `choicesSource` is popped entirely and `choices` cleared to `[]` — same wholesale-clear treatment as `choicesByUrl`, not a half-normalized leftover. Traced the logic by hand against `tests/test_transfer.py::test_choices_source_shaped_tenant_scoped_choices_are_stripped_and_reported` (TC11, the exact Ginko-shaped fixture with tenant keys nested in `attrs`) and `test_choices_source_shaped_ordinary_choices_are_not_over_stripped` (negative case, byte-identical output when nothing is tenant-scoped) — both pass and both exercise the real-world shape, not just the round-1 guessed flat-`choices` shape. No remaining gap: `normalize_choice_source` is a read-only peek (confirmed by reading `_survey_walk.py`), so it cannot itself leak state when no match is found.
+2. **PATCH-body exclusion (round-2 must-fix #2) — confirmed fixed and correctly tested.** `transfer.py:133-136` now filters with `is_transferable_setting()` (`_transfer_sanitize.py:26-44`): excludes the four structural literals (`id`/`definition`/`questions`/`versions`) plus the confirmed `status` field, plus anything matching `owner|shar|publish` case-insensitively. Checked the regex for false positives against every setting name that appears anywhere in this repo's `forms.py`/`shares.py`/tests (`showProgressBar`, `requireMicrosoftSignIn`, `thankYouMessage`, `title`) — none match the exclusion pattern, so AC2's settings still travel (confirmed by `test_import_excludes_status_and_sharing_shaped_keys_from_patch_body` asserting `body["showProgressBar"] is True` in the same call that proves `status`/`ownerId`/`sharedWith` are excluded). `test_is_transferable_setting_excludes_status_owner_sharing_publish_shaped_keys` (TC12) independently locks the exclude/include boundary. The pattern-match approach (vs. enumerating exact names) is a reasonable, explicitly-documented choice given `forms.py`'s own disclaimer that the real field names are unverified — this is a documented assumption (`docs/tickets/PRD-21397.md`'s Open Questions / this module's own docstring at `_transfer_sanitize.py:26-37`), not a silent gap.
+3. **Suggestion #3 (pytest count accuracy) — round 2's own correction holds up.** Independently re-ran `uv run pytest -q` on this worktree at `6aeb094`: **42 passed, 1 failed** (`tests/test_tools.py::test_tools_list_snapshot`, `mspbots_forms_form_delete` description 521 > 500 chars) — matches round 2's re-verified number exactly. Reproduced the same failure independently in a throwaway `git worktree add --detach` on pristine `origin/main@0aa749b` (confirmed still the tip of `main`, not moved since this ticket's last sync) — same assertion, same line. Confirmed pre-existing and unrelated to this ticket's diff, consistent with rounds 1–2.
+
+### Independent verification performed this round
+
+- Full diff of this round's own commits (`81ea772` merge + `303c51a` fix + `6aeb094` docs, i.e. everything after round 2's reviewed `3138f32`) restricted to non-merge-brought files: `_transfer_sanitize.py`, `transfer.py`, `tests/test_transfer.py`, `docs/tickets/PRD-21397-review.md`, `docs/tickets/PRD-21397.ac.json`. No out-of-scope files touched; the `PRD-21379*`/`_survey_walk.py`/`forms.py` content in the wider commit range is entirely sibling-ticket content pulled in by the required default-branch sync (`git show --stat 81ea772` confirms a clean two-parent merge, zero conflict markers).
+- `git fetch origin main`: still at `0aa749b`, the exact sha this branch last synced against — no re-sync needed before merging.
+- README `## MSPbots Connector` section (lines 7-70) diffed byte-for-byte against `~/.claude/skills/vendor-mcp-development/reference/readme-connector-section.md`: identical (one trailing-blank-line difference only); untouched by this ticket regardless.
+- Chinese-text scan on this worktree at `6aeb094`: clean except this review doc's own quoted evidence and `PRD-21379*`'s own (already-reviewed) docs — same established precedent as rounds 1-2.
+- `.ac.json`: all 12 cases accounted for — TC1, TC4-TC12 are `type: auto` backed by passing pytest functions (verified above); TC2/TC3 are `untested` with an explicit real-account-dependent reason, which `mcp-track.md` §3's completion standard says does not block.
+
+No new must-fix found. No other must-fix findings from rounds 1-2 remain open.
+
+### Standards checklist (`legs/review.md` R3 + `mcp-track.md` §4.3)
+
+| Item | Result |
+|---|---|
+| Credentials only from request headers, never logged/persisted; no shared state across requests | Unaffected by this ticket's diff (export/import tools take the same per-request `X-API-Key`/`X-MSP-Host` as every other tool in this server) |
+| Tool name/params/return/errors match tech design; errors structured | `mspbots_forms_form_export`/`_import` match the design; `TransferError.to_envelope()` mirrors `FormsAPIError`'s shape |
+| Changed tools/params have matching test changes; Self-test has synced-code results and `tools/list` | Yes — TC11/TC12 added for this round's fixes; Self-test table (round 2) and this round's independent re-run both show synced-code results |
+| README Connector section matches reference verbatim | Yes (verified above) |
+| No Chinese anywhere shipped | Yes (verified above) |
+| Cross-repo headers/fields tolerate absence | N/A — no new cross-repo contract introduced by this ticket |
+| SOP §14 checklist | Satisfied per round 1/2's own checks, re-confirmed above (Chinese scan, README, tests, smoke) |
+
+Reused `src/mspbots_forms_mcp/tools/_survey_walk.py` (sibling ticket's existing module) rather than re-deriving `choicesSource` handling — correct reuse, not a duplicate implementation.
