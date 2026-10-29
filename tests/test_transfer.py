@@ -13,6 +13,10 @@ Maps to docs/tickets/PRD-21397.ac.json:
          test_import_refuses_missing_export_version
   TC8 -> test_import_returns_form_id_and_report
   TC9 -> test_tenant_a_identifiers_do_not_survive_unflagged
+  TC11 (dev, review round 2 must-fix #1) ->
+         test_choices_source_shaped_tenant_scoped_choices_are_stripped_and_reported
+  TC12 (dev, review round 2 must-fix #2) ->
+         test_import_excludes_status_and_sharing_shaped_keys_from_patch_body
 (TC2/TC3's real-account verification against "requires Microsoft 365
  sign-in" is still manual-only, see the ac.json "untested" entries and the
  Self-test section of docs/tickets/PRD-21397.md.)
@@ -26,6 +30,7 @@ import pytest
 from mspbots_forms_mcp.tools._transfer_sanitize import (
     EXPORT_SCHEMA_VERSION,
     TransferError,
+    is_transferable_setting,
     strip_tenant_specific,
     validate_export_version,
 )
@@ -84,6 +89,89 @@ def test_tenant_scoped_static_choices_are_stripped_and_reported():
     assert len(report) == 1
     assert report[0]["field"] == "client_org"
     assert "tenantId" in report[0]["reason"]
+
+
+def test_choices_source_shaped_tenant_scoped_choices_are_stripped_and_reported():
+    """TC11 (dev, review round 2 must-fix #1). The real client_org question
+    (sibling ticket PRD-21379, test_form_get_field_id_handles_choices_source_shape,
+    form f7528a78) stores its options under choicesSource.items with the
+    tenant-scoped keys nested inside each item's "attrs" dict, not as a
+    top-level "choices" list and not flat on the item -- the shape round
+    1/2's own TC5/TC6 fixtures never exercised. This must be caught and
+    stripped the same as the flat-choices case, with choicesSource dropped
+    entirely (not left behind half-normalized)."""
+    definition = {
+        "pages": [
+            {
+                "elements": [
+                    {
+                        "type": "dropdown",
+                        "name": "client_org",
+                        "title": "Client Organization",
+                        "choicesSource": {
+                            "items": [
+                                {
+                                    "value": "a",
+                                    "text": "Acme",
+                                    "attrs": {
+                                        "tenantId": "t-123",
+                                        "haloClientId": "halo-123",
+                                        "rewstOrgId": "rewst-123",
+                                    },
+                                },
+                                {
+                                    "value": "b",
+                                    "text": "Beta",
+                                    "attrs": {"haloClientId": "halo-456"},
+                                },
+                            ],
+                            "passAttributes": ["tenantId", "haloClientId", "rewstOrgId"],
+                        },
+                    }
+                ]
+            }
+        ]
+    }
+    stripped, report = strip_tenant_specific(definition)
+    field = stripped["pages"][0]["elements"][0]
+    assert "choicesSource" not in field
+    assert field["choices"] == []
+    assert len(report) == 1
+    assert report[0]["field"] == "client_org"
+    assert "tenantId" in report[0]["reason"]
+    assert "haloClientId" in report[0]["reason"]
+    rendered = json.dumps(stripped)
+    assert "t-123" not in rendered
+    assert "halo-123" not in rendered
+    assert "halo-456" not in rendered
+
+
+def test_choices_source_shaped_ordinary_choices_are_not_over_stripped():
+    """Complement to the test above: a choicesSource-shaped question with no
+    tenant-scoped keys anywhere must be left completely untouched -- no
+    conversion into a flat "choices" list, since nothing needs sanitizing."""
+    definition = {
+        "pages": [
+            {
+                "elements": [
+                    {
+                        "type": "dropdown",
+                        "name": "priority",
+                        "title": "Priority",
+                        "choicesSource": {
+                            "items": [{"value": "low", "text": "Low"}, {"value": "high", "text": "High"}],
+                            "passAttributes": ["text"],
+                        },
+                    }
+                ]
+            }
+        ]
+    }
+    original = copy.deepcopy(definition)
+    stripped, report = strip_tenant_specific(definition)
+    field = stripped["pages"][0]["elements"][0]
+    assert field == original["pages"][0]["elements"][0]
+    assert report == []
 
 
 def test_ordinary_static_choices_are_not_over_stripped():
@@ -265,6 +353,11 @@ async def test_import_carries_over_sibling_form_settings():
     source_with_settings["thankYouMessage"] = "Thanks for completing this form!"
     source_with_settings["questions"] = [{"name": "q1", "kind": "text"}]  # read-side projection
     source_with_settings["versions"] = [{"id": "v1", "publishedAt": "2026-01-01"}]
+    # Review round 2, must-fix #2: a status/owner/sharing-shaped key on the
+    # source record must NOT reach the PATCH body either (see
+    # test_import_excludes_status_and_sharing_shaped_keys_from_patch_body
+    # for the dedicated/exhaustive coverage of this).
+    source_with_settings["status"] = "published"
     export_payload = {"export_version": EXPORT_SCHEMA_VERSION, "form": source_with_settings}
 
     import_client = _FakeClient(create_response={"id": "new-form-9"}, patch_response={"id": "new-form-9"})
@@ -279,9 +372,61 @@ async def test_import_carries_over_sibling_form_settings():
     assert "id" not in body
     assert "questions" not in body
     assert "versions" not in body
+    assert "status" not in body
     # title/definition are still the import-side overrides, not copied raw.
     assert body["title"] == "PRECICOM offboarding (imported)"
     assert body["definition"] == source_with_settings["definition"]
+
+
+def test_is_transferable_setting_excludes_status_owner_sharing_publish_shaped_keys():
+    """TC12 (dev, review round 2 must-fix #2), pure-function half: the
+    confirmed "status" field, plus any owner/sharing/publish-shaped key
+    (exact real names unverified -- forms.py's own disclaimer), must never
+    be treated as a safe setting to copy; an ordinary setting still is."""
+    for blocked in [
+        "id",
+        "definition",
+        "questions",
+        "versions",
+        "status",
+        "ownerId",
+        "owner",
+        "sharedWith",
+        "shareSettings",
+        "publishedAt",
+        "publishedVersionId",
+        "isPublished",
+    ]:
+        assert is_transferable_setting(blocked) is False, blocked
+    for allowed in ["showProgressBar", "requireMicrosoftSignIn", "thankYouMessage", "title"]:
+        assert is_transferable_setting(allowed) is True, allowed
+
+
+@pytest.mark.asyncio
+async def test_import_excludes_status_and_sharing_shaped_keys_from_patch_body():
+    """TC12 (dev, review round 2 must-fix #2), tool-level half: a source
+    form record carrying "status": "published" plus an owner/sharing-shaped
+    key must not auto-publish or carry ownership onto the freshly created
+    (currently-draft) destination form -- both directly contradicted by the
+    ticket's non-goals (docs/tickets/PRD-21397.md:45) and "unpublished"
+    scope requirement (:39)."""
+    source_with_state = copy.deepcopy(SOURCE_FORM)
+    source_with_state["status"] = "published"
+    source_with_state["ownerId"] = "user-should-not-transfer"
+    source_with_state["sharedWith"] = ["team-x"]
+    export_payload = {"export_version": EXPORT_SCHEMA_VERSION, "form": source_with_state}
+
+    import_client = _FakeClient(create_response={"id": "new-form-9"}, patch_response={"id": "new-form-9"})
+    import_mcp = _make_mcp(import_client)
+    await import_mcp.call_tool("mspbots_forms_form_import", {"export_payload": export_payload})
+
+    patch_call = next(c for c in import_client.calls if c[0] == "patch")
+    body = patch_call[2]
+    assert "status" not in body
+    assert "ownerId" not in body
+    assert "sharedWith" not in body
+    # An ordinary sibling setting still travels (round-1's fix not regressed).
+    assert body["showProgressBar"] is True
 
 
 @pytest.mark.asyncio

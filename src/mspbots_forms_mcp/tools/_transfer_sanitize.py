@@ -6,9 +6,11 @@ _common.py's NO_TOKEN constant, just for logic instead of a literal.
 """
 
 import copy
+import re
 from typing import Any
 
 from .._json import error_envelope
+from ._survey_walk import normalize_choice_source
 
 # Export envelope format version. Bump this and add a new validate/transform
 # path when the envelope shape changes (e.g. a future version carrying
@@ -19,6 +21,30 @@ EXPORT_SCHEMA_VERSION = 1
 # tenantId, haloClientId, rewstOrgId — e.g. Ginko's client_org options).
 # Extend this set here for future integrations (Open questions, design doc).
 TENANT_SCOPED_CHOICE_KEYS = {"tenantId", "haloClientId", "rewstOrgId"}
+
+# Form-record keys that must never reach the import PATCH body even under
+# the "copy the whole record" strategy (review round 2, must-fix #2):
+#   - "status": the base record's draft/published/archived field (confirmed
+#     to exist by forms.py's own status-filtered form_list and shares.py's
+#     parallel status state machine) -- copying it from a published source
+#     form would auto-publish the freshly created (currently-draft) form,
+#     contradicting the ticket's "unpublished" requirement.
+# Beyond that literal, the real field names for owner/sharing/publish-state
+# metadata are unverified (forms.py:1-6's own disclaimer: built from a
+# pasted API contract, never called against a real deployment) -- so rather
+# than guess more literals and risk missing a variant, anything whose name
+# looks owner/sharing/publish-shaped is excluded by substring match. Revisit
+# once TC2 against a real form shows the actual key names.
+_NON_TRANSFERABLE_SETTING_KEYS = frozenset({"id", "definition", "questions", "versions", "status"})
+_NON_TRANSFERABLE_SETTING_PATTERN = re.compile(r"owner|shar|publish", re.IGNORECASE)
+
+
+def is_transferable_setting(key: str) -> bool:
+    """True if `key` is safe to carry from the source form record onto the
+    import PATCH body (transfer.py's mspbots_forms_form_import)."""
+    return key not in _NON_TRANSFERABLE_SETTING_KEYS and not _NON_TRANSFERABLE_SETTING_PATTERN.search(
+        key
+    )
 
 
 class TransferError(Exception):
@@ -67,9 +93,15 @@ def strip_tenant_specific(definition: dict) -> tuple[dict, list[dict]]:
     Two cases, each independently detected on every dict in the tree:
       - a dict with "choicesByUrl" -> that key is dropped and "choices" (if
         present) is cleared; reported as "data-source-bound (choicesByUrl)".
-      - a dict with a "choices" list whose items are themselves dicts
-        containing any key in TENANT_SCOPED_CHOICE_KEYS -> "choices" is
-        cleared; reported as "static tenant-scoped options (<matched keys>)".
+      - a dict with static choice options (either a top-level "choices"
+        list, or a "choicesSource": {"items": [...]} dict — the shape
+        live-tested and confirmed for the real client_org question on
+        sibling ticket PRD-21379, see _choice_keys below) whose items carry
+        any key in TENANT_SCOPED_CHOICE_KEYS (checked both on the item
+        itself and inside a nested "attrs" dict, the real client_org
+        shape) -> the options are cleared (and "choicesSource" dropped
+        entirely, same wholesale-clear treatment as choicesByUrl); reported
+        as "static tenant-scoped options (<matched keys>)".
 
     Returns a deep copy — the caller's original definition is never mutated.
     """
@@ -77,6 +109,20 @@ def strip_tenant_specific(definition: dict) -> tuple[dict, list[dict]]:
     report: list[dict] = []
     _walk(working, report)
     return working, report
+
+
+def _choice_keys(choice: dict) -> set[str]:
+    """Keys that could mark `choice` as tenant-scoped: the choice's own
+    top-level keys (the shape this module originally assumed, still used by
+    this ticket's own TC5/TC6 fixtures), plus a nested "attrs" dict's keys
+    — the real shape of Ginko's client_org question (choicesSource.items[*]
+    .attrs), live-tested and confirmed on sibling ticket PRD-21379
+    (test_form_get_field_id_handles_choices_source_shape)."""
+    keys = set(choice.keys())
+    attrs = choice.get("attrs")
+    if isinstance(attrs, dict):
+        keys |= attrs.keys()
+    return keys
 
 
 def _walk(node: Any, report: list[dict]) -> None:
@@ -88,13 +134,28 @@ def _walk(node: Any, report: list[dict]) -> None:
                 {"field": _field_label(node), "reason": "data-source-bound (choicesByUrl)"}
             )
 
-        choices = node.get("choices")
+        # A static-choice question's options can live under a top-level
+        # "choices" list, or under "choicesSource": {"items": [...]} (the
+        # real shape confirmed for client_org — see docstring above).
+        # normalize_choice_source (_survey_walk.py, already live-tested on
+        # PRD-21379) is read-only here: it returns `node` itself unchanged
+        # when there's nothing to normalize, or a *new* dict otherwise, so
+        # peeking at it never mutates the tree unless a tenant-scoped match
+        # is actually found below.
+        candidate = normalize_choice_source(node) if "choicesSource" in node else node
+        choices = candidate.get("choices")
         if isinstance(choices, list):
             matched_keys: set[str] = set()
             for choice in choices:
                 if isinstance(choice, dict):
-                    matched_keys |= TENANT_SCOPED_CHOICE_KEYS & choice.keys()
+                    matched_keys |= TENANT_SCOPED_CHOICE_KEYS & _choice_keys(choice)
             if matched_keys:
+                if candidate is not node:
+                    # The match lived inside choicesSource.items -- drop the
+                    # whole source rather than leaving a flattened "choices"
+                    # list standing in for it (same wholesale-clear
+                    # treatment as choicesByUrl above).
+                    node.pop("choicesSource", None)
                 node["choices"] = []
                 report.append(
                     {

@@ -28,6 +28,7 @@ from ._common import NO_TOKEN
 from ._transfer_sanitize import (
     EXPORT_SCHEMA_VERSION,
     TransferError,
+    is_transferable_setting,
     strip_tenant_specific,
     validate_export_version,
 )
@@ -122,16 +123,16 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
         # design SS "Conclusion"), so every form-level setting it carries is
         # a sibling key, not nested inside `definition`. Build the PATCH body
         # from that whole record rather than enumerating settings by name,
-        # excluding only what must not be copied onto the new form:
-        #   - "id": identity of the SOURCE form; the new form has its own.
-        #   - "definition": replaced below with the sanitized definition.
-        #   - "questions": form_get's read-side compact projection of the
-        #     same content as `definition` (see forms.py's include= doc) --
-        #     not an accepted PATCH shape, and redundant with it.
-        #   - "versions": published version history, not a form-level
-        #     setting; there is nothing here to "set" on a new draft.
-        _non_transferable_keys = frozenset({"id", "definition", "questions", "versions"})
-        patch_body = {k: v for k, v in form.items() if k not in _non_transferable_keys}
+        # excluding identity/content keys replaced elsewhere ("id",
+        # "definition", "questions", "versions") plus anything
+        # status/owner/sharing-shaped (review round 2, must-fix #2):
+        # copying the source's "status" or a sharing/ownership field onto
+        # the freshly created (currently-draft) form risks auto-publishing
+        # it and/or carrying over metadata the ticket's non-goals explicitly
+        # exclude ("owners/sharing" -- docs/tickets/PRD-21397.md:45) -- see
+        # is_transferable_setting's docstring for why this is a pattern
+        # match rather than more literal names.
+        patch_body = {k: v for k, v in form.items() if is_transferable_setting(k)}
         patch_body["definition"] = stripped_definition
         patch_body["title"] = new_title
 
