@@ -116,6 +116,25 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
 
         stripped_definition, report = strip_tenant_specific(definition)
 
+        # PRD-21397 AC2 (settings fidelity, e.g. showProgressBar, "requires
+        # Microsoft 365 sign-in", thank-you message): `form` is the raw
+        # upstream record (export deliberately keeps it verbatim -- Tech
+        # design SS "Conclusion"), so every form-level setting it carries is
+        # a sibling key, not nested inside `definition`. Build the PATCH body
+        # from that whole record rather than enumerating settings by name,
+        # excluding only what must not be copied onto the new form:
+        #   - "id": identity of the SOURCE form; the new form has its own.
+        #   - "definition": replaced below with the sanitized definition.
+        #   - "questions": form_get's read-side compact projection of the
+        #     same content as `definition` (see forms.py's include= doc) --
+        #     not an accepted PATCH shape, and redundant with it.
+        #   - "versions": published version history, not a form-level
+        #     setting; there is nothing here to "set" on a new draft.
+        _non_transferable_keys = frozenset({"id", "definition", "questions", "versions"})
+        patch_body = {k: v for k, v in form.items() if k not in _non_transferable_keys}
+        patch_body["definition"] = stripped_definition
+        patch_body["title"] = new_title
+
         try:
             created = await client.post("/surveys", json_body={"title": new_title})
             new_form_id = created.get("id") if isinstance(created, dict) else None
@@ -125,10 +144,7 @@ def register(mcp: FastMCP, client_factory: Callable[[], FormsAPIClient | None]) 
                     f"Form created but no id in response: {dump_json_capped(created)}",
                     False,
                 )
-            await client.patch(
-                f"/surveys/{new_form_id}",
-                json_body={"definition": stripped_definition, "title": new_title},
-            )
+            await client.patch(f"/surveys/{new_form_id}", json_body=patch_body)
         except FormsAPIError as e:
             # If the patch (step 2) fails after the create (step 1)
             # succeeded, the shell form already exists in draft — same

@@ -4,6 +4,8 @@ driven end-to-end against a fake FormsAPIClient (no real HTTP).
 
 Maps to docs/tickets/PRD-21397.ac.json:
   TC1 -> test_export_then_import_roundtrip_is_field_for_field_identical
+  TC2 -> test_import_carries_over_sibling_form_settings (code-reachable part;
+         the real-account round trip is still manual-only, see below)
   TC4 -> test_choices_by_url_field_is_stripped_and_reported
   TC5 -> test_tenant_scoped_static_choices_are_stripped_and_reported
   TC6 -> test_ordinary_static_choices_are_not_over_stripped
@@ -11,7 +13,8 @@ Maps to docs/tickets/PRD-21397.ac.json:
          test_import_refuses_missing_export_version
   TC8 -> test_import_returns_form_id_and_report
   TC9 -> test_tenant_a_identifiers_do_not_survive_unflagged
-(TC2/TC3 are manual-only, see the ac.json "untested" entries and the
+(TC2/TC3's real-account verification against "requires Microsoft 365
+ sign-in" is still manual-only, see the ac.json "untested" entries and the
  Self-test section of docs/tickets/PRD-21397.md.)
 """
 
@@ -241,6 +244,44 @@ async def test_export_then_import_roundtrip_is_field_for_field_identical():
     # source definition (no data-source/tenant-scoped choices to strip).
     patch_call = next(c for c in import_client.calls if c[0] == "patch")
     assert patch_call[2]["definition"] == SOURCE_FORM["definition"]
+    # AC2 (settings fidelity): sibling form-level settings (showProgressBar
+    # here) travel with the PATCH body, not just the definition.
+    assert patch_call[2]["showProgressBar"] is True
+
+
+@pytest.mark.asyncio
+async def test_import_carries_over_sibling_form_settings():
+    """AC2 regression (review round 1, must-fix #1): the exported `form`
+    record's sibling settings -- anything alongside `definition`/`title`,
+    e.g. showProgressBar, a hypothetical M365-sign-in-required flag, a
+    thank-you message -- must reach the PATCH body verbatim, since the
+    export deliberately keeps the raw record (Tech design SS "Conclusion"):
+    this is what lets AC2 hold without enumerating every settings field by
+    name. Identity (`id`) and non-setting projections (`questions`,
+    `versions`) must NOT be copied over.
+    """
+    source_with_settings = copy.deepcopy(SOURCE_FORM)
+    source_with_settings["requireMicrosoftSignIn"] = True
+    source_with_settings["thankYouMessage"] = "Thanks for completing this form!"
+    source_with_settings["questions"] = [{"name": "q1", "kind": "text"}]  # read-side projection
+    source_with_settings["versions"] = [{"id": "v1", "publishedAt": "2026-01-01"}]
+    export_payload = {"export_version": EXPORT_SCHEMA_VERSION, "form": source_with_settings}
+
+    import_client = _FakeClient(create_response={"id": "new-form-9"}, patch_response={"id": "new-form-9"})
+    import_mcp = _make_mcp(import_client)
+    await import_mcp.call_tool("mspbots_forms_form_import", {"export_payload": export_payload})
+
+    patch_call = next(c for c in import_client.calls if c[0] == "patch")
+    body = patch_call[2]
+    assert body["showProgressBar"] is True
+    assert body["requireMicrosoftSignIn"] is True
+    assert body["thankYouMessage"] == "Thanks for completing this form!"
+    assert "id" not in body
+    assert "questions" not in body
+    assert "versions" not in body
+    # title/definition are still the import-side overrides, not copied raw.
+    assert body["title"] == "PRECICOM offboarding (imported)"
+    assert body["definition"] == source_with_settings["definition"]
 
 
 @pytest.mark.asyncio
