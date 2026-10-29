@@ -89,7 +89,7 @@ This server was built from the API contract Leo Yang pasted into the PRD-15818 c
 
 ## Overview
 
-Implements the [Model Context Protocol](https://modelcontextprotocol.io/) (Streamable HTTP transport) and exposes the **14 tools** specified in the API contract, covering three areas — **building/editing forms**, **managing how they're shared**, and **reading back what respondents submitted**. An agent should reach for this MCP for requests like:
+Implements the [Model Context Protocol](https://modelcontextprotocol.io/) (Streamable HTTP transport) and exposes **16 tools**: the **14** specified in the API contract, covering three areas — **building/editing forms**, **managing how they're shared**, and **reading back what respondents submitted** — plus **2** added for PRD-21397 to **transfer a form definition across tenants** via an export/import JSON file. An agent should reach for this MCP for requests like:
 
 - "Build me a quick customer-satisfaction form and get me a link to send out" → `mspbots_forms_form_quick_publish`
 - "I need to tweak the wording on question 3 of the NPS form" → `mspbots_forms_form_update`
@@ -97,6 +97,7 @@ Implements the [Model Context Protocol](https://modelcontextprotocol.io/) (Strea
 - "Pause this share link for a bit, we're getting too many responses right now" → `mspbots_forms_share_update` with `action="pause"`
 - "Show me the actual open-text comments people left, not just the stats" → `mspbots_forms_response_list`
 - "This form's done — delete it and everything tied to it" → `mspbots_forms_form_delete`
+- "Copy this form into the client's tenant exactly as-is" → `mspbots_forms_form_export` then `mspbots_forms_form_import`
 
 | Category | Tool | Annotations |
 |---|---|---|
@@ -111,6 +112,8 @@ Implements the [Model Context Protocol](https://modelcontextprotocol.io/) (Strea
 | | `mspbots_forms_share_delete` | **destructive**, requires `confirm=true` (responses preserved) |
 | Response | `mspbots_forms_response_summary` | readOnly — call this first for analysis |
 | | `mspbots_forms_response_list` | readOnly — columnar format, only when individual answers are needed |
+| Transfer | `mspbots_forms_form_export` | — produces a versioned JSON file |
+| | `mspbots_forms_form_import` | — creates a new unpublished draft; data-source/tenant-scoped fields are imported unbound and flagged in a report (PRD-21397) |
 
 Per the contract, the public respondent-facing endpoints (`/api/public/*` — unlock, save draft, submit) are **deliberately not exposed as tools**: an agent shouldn't be able to submit a form on an anonymous respondent's behalf.
 

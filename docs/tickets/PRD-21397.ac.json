@@ -63,7 +63,8 @@
     "type": "auto",
     "tests": [
       "tests/test_transfer.py::test_import_refuses_unsupported_export_version",
-      "tests/test_transfer.py::test_import_refuses_missing_export_version"
+      "tests/test_transfer.py::test_import_refuses_missing_export_version",
+      "tests/test_transfer.py::test_import_refuses_unsupported_version_without_any_write_call"
     ]
   },
   {

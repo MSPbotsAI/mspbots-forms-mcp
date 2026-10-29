@@ -122,7 +122,11 @@ def create_mcp_server(settings: Settings) -> FastMCP:
             "response_summary to see results, response_list only when "
             "individual answers are needed. Delete tools are destructive and "
             "require confirm=true. Public respondent-facing endpoints (submit/"
-            "unlock) are intentionally not exposed as tools."
+            "unlock) are intentionally not exposed as tools. Transfer "
+            "(mspbots_forms_form_export/import) moves a form definition "
+            "across tenants via a JSON file — export under the source "
+            "tenant, import under the destination tenant; data-source and "
+            "tenant-scoped fields are flagged, not copied."
         ),
         transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
         stateless_http=True,
@@ -131,10 +135,11 @@ def create_mcp_server(settings: Settings) -> FastMCP:
 
     client_factory: Callable[[], FormsAPIClient | None] = lambda: get_client_from_context(settings)
 
-    from .tools import forms, responses, shares
+    from .tools import forms, responses, shares, transfer
 
     forms.register(mcp, client_factory)
     shares.register(mcp, client_factory)
     responses.register(mcp, client_factory)
+    transfer.register(mcp, client_factory)
 
     return mcp
