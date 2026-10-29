@@ -14,3 +14,22 @@ Verdict: changes requested
    Fix: rephrase those two citations in English (e.g. name the skill section by its English gloss or just drop the quoted Chinese title and describe the rule in English), then re-run the Chinese-text scan on the final commit before re-freezing.
 
 No other must-fix findings. The rest of the diff (`_transfer_sanitize.py`'s generic tree walk, `validate_export_version`'s version gate, the two-call non-atomicity documented as an accepted gap, tenant isolation via per-request credentials, test coverage for AC1/AC4/AC5/AC6/AC7/AC8/AC1-regression) is sound and matches the tech design.
+
+### Fixes (round 1), reviewed-rework commit `a43bd4b`
+
+1. **`transfer.py:113-131`** — `mspbots_forms_form_import` now builds the PATCH body from the whole exported `form` record (`form.items()`), excluding only `id` (identity of the source form), `definition` (replaced with the sanitized definition), `questions` (a read-side compact projection documented in `forms.py`'s `form_get`, not an acceptable write-side shape), and `versions` (published-version history, not a form-level setting). This matches the fix's "ideally" option and the design's own stated assumption (`docs/tickets/PRD-21397.md:121`) that `form` is kept raw specifically so settings fields travel without needing to be enumerated by name — so it also covers "requires Microsoft 365 sign-in" and the thank-you message once a real form proves where those live (TC2, still manual/INT-only).
+   Evidence: `tests/test_transfer.py::test_export_then_import_roundtrip_is_field_for_field_identical` now also asserts `showProgressBar` reaches the PATCH body; new `tests/test_transfer.py::test_import_carries_over_sibling_form_settings` asserts two more sibling settings (`requireMicrosoftSignIn`, `thankYouMessage`) are carried over verbatim while `id`/`questions`/`versions` are not, and that `title`/`definition` are still the import-side overrides, not the raw copies.
+2. **`docs/tickets/PRD-21397.md:276,286`** — rephrased both citations in English ("SKILL.md's 'effect of dev-added test cases' section"; "what a test case judges is set upstream and fixed, but which test function is used to judge it is the dev leg's own choice"), no change in meaning. Re-ran the Chinese-text scan on commit `a43bd4b`: `grep -rnP '[\x{4e00}-\x{9fff}]' --exclude-dir=.git --exclude-dir=.venv .` finds Chinese only inside this review doc's own quotation of the original defect (finding #2 above, kept verbatim as evidence) — no Chinese remains anywhere else in the repository, including `docs/tickets/PRD-21397.md`.
+
+**Re-run at `a43bd4b`** (full `uv run pytest`, re-synced default branch unchanged at `main@0aa749b` — no newer commits to merge):
+
+| Check | Result |
+|---|---|
+| `uv run pytest` | exit 1 overall: 31 passed, 1 pre-existing failure (`tests/test_tools.py::test_tools_list_snapshot`, `mspbots_forms_form_delete` description 521 > 500 chars) |
+| Baseline-red confirmation | Recorded a `tdd.py` baseline at the pre-fix commit `99098e2` (what round 1 reviewed): already 30 passed / 1 failed, same failing test. Confirmed present even further back, at `main@35c6ccf` (the base round 1 synced against) and at current `main@0aa749b` — predates this ticket entirely, unrelated to the `transfer.py`/doc changes above. Per `REVIEW.md` §3/§4 this is WARN (baseline-red, judge by increment), not a blocker: `tdd.py diff --from <99098e2 baseline> --to <this commit>` → 0 regressions, 1 newly-passing-irrelevant (new test), 1 still-failing (pre-existing, unchanged). The round-1 Self-test table's claim of an all-green baseline was itself stale (superseded here, main doc left untouched per S1 "review-rework" scope) |
+| MCP smoke (local server, placeholder headers `X-API-Key`/`X-MSP-Host`/`X-MSP-Tenant-Id`) | `/health` → 200; missing all three headers → 401; `tools/list` → 16 tools incl. `mspbots_forms_form_export`/`mspbots_forms_form_import` |
+| Chinese-text scan | clean except this review doc's own quoted evidence (see above) |
+| README Connector section | untouched by this round (`git diff --stat README.md` empty) |
+| `gitleaks` | not installed in this environment; no credential-shaped strings touched by this round's diff |
+
+Outstanding (unchanged from round 1, not re-litigated): TC2/TC3 remain manual/untested — need a real multi-tenant INT form with "requires Microsoft 365 sign-in", a non-default progress bar, a thank-you message, and at least one response; not a code defect per `mcp-track.md` §3 completion standard.
